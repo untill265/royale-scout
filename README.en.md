@@ -58,7 +58,7 @@ These checks improve transparency but are not an absolute security guarantee. Se
 
 ## Build from source
 
-Windows 10/11 x64, Go 1.25+, Node.js 24+, npm, and Wails CLI 2.15.0 are required.
+Windows 10/11 x64, Go 1.27+, Node.js 24+, npm, and Wails CLI 2.15.0 are required.
 
 ```powershell
 npm ci --prefix frontend

@@ -69,14 +69,11 @@ jobs:
         uses: github/codeql-action/init@db488ddef3bf6cb639b32c2e9a7c0a7ea8271d28 # v4
         with:
           languages: go
-          build-mode: manual
+          build-mode: autobuild
           queries: security-extended
 
-      - name: Build Go code for analysis
-        shell: pwsh
-        run: |
-          go clean -cache
-          go test -count=1 ./...
+      - name: Autobuild Go code for analysis
+        uses: github/codeql-action/autobuild@db488ddef3bf6cb639b32c2e9a7c0a7ea8271d28 # v4
 
       - name: Analyze
         uses: github/codeql-action/analyze@db488ddef3bf6cb639b32c2e9a7c0a7ea8271d28 # v4

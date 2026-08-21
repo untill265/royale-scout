@@ -76,7 +76,7 @@ gh attestation verify .\RoyaleScout-v0.2.0-windows-x64.zip --repo untill265/roya
 
 ## Сборка из исходников
 
-Требуются Windows 10/11 x64, Go 1.25+, Node.js 24+, npm и Wails CLI 2.15.0.
+Требуются Windows 10/11 x64, Go 1.27+, Node.js 24+, npm и Wails CLI 2.15.0.
 
 ```powershell
 npm ci --prefix frontend
