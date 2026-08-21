@@ -2,6 +2,10 @@
 
 **Royale Scout** — локальное Windows-приложение для ручного поиска соперника Clash Royale по Ranked-медалям и части ника. Оно показывает до трёх последних Ranked-колод и отдельно выделяет настоящие заклинания.
 
+[![CI](https://github.com/untill265/royale-scout/actions/workflows/ci.yml/badge.svg)](https://github.com/untill265/royale-scout/actions/workflows/ci.yml)
+[![CodeQL](https://github.com/untill265/royale-scout/actions/workflows/codeql.yml/badge.svg)](https://github.com/untill265/royale-scout/actions/workflows/codeql.yml)
+[![Verified Release](https://github.com/untill265/royale-scout/actions/workflows/release.yml/badge.svg)](https://github.com/untill265/royale-scout/actions/workflows/release.yml)
+
 [English README](README.en.md)
 
 ## Главное
@@ -20,12 +24,20 @@
 3. При желании проверьте контрольную сумму:
 
    ```powershell
-   Get-FileHash .\RoyaleScout-v0.1.0-windows-x64.zip -Algorithm SHA256
+   Get-FileHash .\RoyaleScout-v0.2.0-windows-x64.zip -Algorithm SHA256
    ```
 
 4. Распакуйте ZIP в обычную папку и запустите `RoyaleScout.exe`.
 
-Первая публичная версия не подписана платным сертификатом, поэтому Microsoft Defender SmartScreen может показать предупреждение «Windows защитила ваш компьютер». Скачивайте приложение только из Releases этого репозитория, сверяйте SHA-256 и не запускайте копии из случайных источников.
+Приложение пока не подписано платным сертификатом, поэтому Microsoft Defender SmartScreen может показать предупреждение «Windows защитила ваш компьютер». Скачивайте приложение только из Releases этого репозитория, сверяйте SHA-256 и не запускайте копии из случайных источников.
+
+Для дополнительной проверки установите [GitHub CLI](https://cli.github.com/) и подтвердите, что ZIP действительно создан GitHub Actions из этого репозитория:
+
+```powershell
+gh attestation verify .\RoyaleScout-v0.2.0-windows-x64.zip --repo untill265/royale-scout
+```
+
+В каждом релизе также публикуется файл `sbom.spdx.json` — машиночитаемый список компонентов и зависимостей сборки.
 
 ## Первый запуск и API-токен
 
@@ -58,7 +70,9 @@
 
 ## Безопасность
 
-Архитектура защиты и порядок сообщения об уязвимостях описаны в [SECURITY.md](SECURITY.md). Никогда не публикуйте свой API-токен в issue, скриншоте или логе.
+Каждый новый релиз публикуется только после успешных тестов, `npm audit`, `govulncheck` и сканирования готового архива ClamAV. Изменения исходного кода дополнительно анализируются CodeQL. GitHub подписывает аттестацию происхождения ZIP, а SHA-256 и SBOM публикуются рядом с ним. Результаты всех этапов открыты во вкладке **Actions**.
+
+Эти проверки существенно повышают прозрачность, но не являются абсолютной гарантией безопасности. Архитектура защиты и порядок сообщения об уязвимостях описаны в [SECURITY.md](SECURITY.md). Никогда не публикуйте свой API-токен в issue, скриншоте или логе.
 
 ## Сборка из исходников
 
@@ -81,10 +95,10 @@ wails dev
 Сборка релизного ZIP:
 
 ```powershell
-.\scripts\package-release.ps1 -Version 0.1.0
+.\scripts\package-release.ps1 -Version 0.2.0
 ```
 
-CI проверяет проект на Windows, а workflow релиза собирает ZIP и SHA-256 при публикации тега вида `v0.1.0`.
+CI проверяет проект на Windows, а workflow релиза собирает, инвентаризирует, сканирует и аттестует ZIP при публикации тега вида `v0.2.0`.
 
 ## Правовой статус
 

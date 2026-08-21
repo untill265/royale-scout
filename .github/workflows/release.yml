@@ -1,29 +1,31 @@
-name: Release
+name: Verified Release
 
 on:
   push:
     tags:
       - 'v*'
 
-permissions:
-  contents: write
-
 jobs:
-  windows:
+  build-windows:
+    name: Build, inventory, and attest
     runs-on: windows-latest
     timeout-minutes: 30
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
     steps:
       - name: Check out source
-        uses: actions/checkout@v6
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Set up Go
-        uses: actions/setup-go@v7
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
           go-version-file: go.mod
           cache: true
 
       - name: Set up Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version: 24
           cache: npm
@@ -34,8 +36,11 @@ jobs:
         run: |
           npm ci --prefix frontend
           npm run build --prefix frontend
+          npm audit --prefix frontend --audit-level=high
           go test ./...
           go vet ./...
+          go install golang.org/x/vuln/cmd/govulncheck@v1.7.0
+          govulncheck ./...
           go install github.com/wailsapp/wails/v2/cmd/wails@v2.15.0
 
       - name: Build and package explicit public files
@@ -44,15 +49,90 @@ jobs:
           $version = $env:GITHUB_REF_NAME.TrimStart('v')
           & './scripts/package-release.ps1' -Version $version
 
+      - name: Generate software bill of materials
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
+        with:
+          file: release/RoyaleScout-${{ github.ref_name }}-windows-x64.zip
+          format: spdx-json
+          output-file: release/RoyaleScout-${{ github.ref_name }}-sbom.spdx.json
+          artifact-name: RoyaleScout-${{ github.ref_name }}-sbom.spdx.json
+          upload-artifact: false
+          upload-release-assets: false
+
+      - name: Finalize release checksums
+        shell: pwsh
+        run: |
+          ./scripts/write-release-checksums.ps1 -FileName @(
+            "RoyaleScout-$env:GITHUB_REF_NAME-windows-x64.zip",
+            "RoyaleScout-$env:GITHUB_REF_NAME-sbom.spdx.json"
+          )
+
+      - name: Attest archive build provenance
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
+        with:
+          subject-path: release/RoyaleScout-${{ github.ref_name }}-windows-x64.zip
+
+      - name: Attest archive SBOM
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
+        with:
+          subject-path: release/RoyaleScout-${{ github.ref_name }}-windows-x64.zip
+          sbom-path: release/RoyaleScout-${{ github.ref_name }}-sbom.spdx.json
+
       - name: Upload workflow artifact
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: RoyaleScout-Windows-x64
           path: release/*
           if-no-files-found: error
+          retention-days: 30
+
+  malware-scan:
+    name: ClamAV malware scan
+    needs: build-windows
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: Download exact release artifact
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: RoyaleScout-Windows-x64
+          path: release
+
+      - name: Verify SHA-256 checksums
+        working-directory: release
+        run: sha256sum --check SHA256SUMS.txt
+
+      - name: Install current ClamAV engine and signatures
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes clamav
+          sudo systemctl stop clamav-freshclam.service 2>/dev/null || true
+          sudo freshclam
+
+      - name: Scan every release file
+        run: clamscan --recursive --infected --max-filesize=100M --max-scansize=250M release
+
+  publish:
+    name: Publish verified assets
+    needs: [build-windows, malware-scan]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Download scanned release artifact
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: RoyaleScout-Windows-x64
+          path: release
+
+      - name: Verify SHA-256 checksums again
+        working-directory: release
+        run: sha256sum --check SHA256SUMS.txt
 
       - name: Publish GitHub Release
-        shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$env:GITHUB_REF_NAME" release/* --verify-tag --generate-notes --title "Royale Scout $env:GITHUB_REF_NAME"
+        run: gh release create "$GITHUB_REF_NAME" release/* --verify-tag --generate-notes --title "Royale Scout $GITHUB_REF_NAME"

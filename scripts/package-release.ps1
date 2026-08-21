@@ -1,7 +1,7 @@
 param(
     [Parameter(Mandatory = $false)]
     [ValidatePattern('^\d+\.\d+\.\d+([-.][0-9A-Za-z.-]+)?$')]
-    [string]$Version = '0.1.0'
+    [string]$Version = '0.2.0'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -12,6 +12,8 @@ $temporaryRoot = [System.IO.Path]::GetFullPath([System.IO.Path]::GetTempPath())
 $resolvedStageDirectory = [System.IO.Path]::GetFullPath($stageDirectory)
 $archiveName = "RoyaleScout-v$Version-windows-x64.zip"
 $archivePath = Join-Path $releaseDirectory $archiveName
+$buildOutputName = "RoyaleScout-build-$([Guid]::NewGuid().ToString('N')).exe"
+$buildOutputPath = Join-Path $projectRoot "build\bin\$buildOutputName"
 
 if (-not $resolvedStageDirectory.StartsWith($temporaryRoot, [StringComparison]::OrdinalIgnoreCase) -or
     -not (Split-Path $resolvedStageDirectory -Leaf).StartsWith('RoyaleScout-', [StringComparison]::Ordinal)) {
@@ -30,7 +32,10 @@ if ($applicationSource -notmatch "applicationVersion\s*=\s*`"$escapedVersion`"")
 
 try {
     Push-Location $projectRoot
-    wails build -clean -trimpath -platform windows/amd64 -o RoyaleScout.exe
+    wails build -trimpath -platform windows/amd64 -o $buildOutputName
+    if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $buildOutputPath -PathType Leaf)) {
+        throw 'Wails did not produce a fresh release executable.'
+    }
 
     New-Item -ItemType Directory -Path $stageDirectory | Out-Null
     New-Item -ItemType Directory -Path $releaseDirectory -Force | Out-Null
@@ -43,7 +48,7 @@ try {
         'LICENSE',
         'THIRD_PARTY_NOTICES.md'
     )
-    Copy-Item -LiteralPath (Join-Path $projectRoot 'build\bin\RoyaleScout.exe') -Destination $stageDirectory
+    Copy-Item -LiteralPath $buildOutputPath -Destination (Join-Path $stageDirectory 'RoyaleScout.exe')
     foreach ($file in $publicFiles) {
         Copy-Item -LiteralPath (Join-Path $projectRoot $file) -Destination $stageDirectory
     }
@@ -54,9 +59,8 @@ try {
     }
     Compress-Archive -Path (Join-Path $stageDirectory '*') -DestinationPath $archivePath -CompressionLevel Optimal
 
+    & (Join-Path $PSScriptRoot 'write-release-checksums.ps1') -ReleaseDirectory $releaseDirectory -FileName $archiveName
     $hash = (Get-FileHash -LiteralPath $archivePath -Algorithm SHA256).Hash.ToLowerInvariant()
-    $checksumPath = Join-Path $releaseDirectory 'SHA256SUMS.txt'
-    "$hash  $archiveName" | Set-Content -LiteralPath $checksumPath -Encoding ascii
 
     Write-Host "Created $archivePath"
     Write-Host "SHA-256 $hash"
@@ -65,5 +69,8 @@ finally {
     Pop-Location
     if (Test-Path -LiteralPath $resolvedStageDirectory) {
         Remove-Item -LiteralPath $resolvedStageDirectory -Recurse -Force
+    }
+    if (Test-Path -LiteralPath $buildOutputPath) {
+        Remove-Item -LiteralPath $buildOutputPath -Force
     }
 }

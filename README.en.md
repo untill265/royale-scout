@@ -2,6 +2,10 @@
 
 **Royale Scout** is a local Windows app for manually finding a Clash Royale opponent by Ranked medals and a nickname fragment. It displays up to three recent Ranked decks and highlights true spells separately.
 
+[![CI](https://github.com/untill265/royale-scout/actions/workflows/ci.yml/badge.svg)](https://github.com/untill265/royale-scout/actions/workflows/ci.yml)
+[![CodeQL](https://github.com/untill265/royale-scout/actions/workflows/codeql.yml/badge.svg)](https://github.com/untill265/royale-scout/actions/workflows/codeql.yml)
+[![Verified Release](https://github.com/untill265/royale-scout/actions/workflows/release.yml/badge.svg)](https://github.com/untill265/royale-scout/actions/workflows/release.yml)
+
 [Русская версия](README.md)
 
 ## Highlights
@@ -20,7 +24,15 @@
 3. Optionally verify the checksum with `Get-FileHash` in PowerShell.
 4. Extract the ZIP and run `RoyaleScout.exe`.
 
-The first public build is not signed with a paid code-signing certificate, so Microsoft Defender SmartScreen may warn about an unknown publisher. Download only from this repository's Releases and verify the SHA-256 checksum.
+The app is not yet signed with a paid code-signing certificate, so Microsoft Defender SmartScreen may warn about an unknown publisher. Download only from this repository's Releases and verify the SHA-256 checksum.
+
+For an additional provenance check, install [GitHub CLI](https://cli.github.com/) and run:
+
+```powershell
+gh attestation verify .\RoyaleScout-v0.2.0-windows-x64.zip --repo untill265/royale-scout
+```
+
+Every release also includes an `sbom.spdx.json` file containing a machine-readable inventory of build components and dependencies.
 
 ## First launch and API token
 
@@ -40,7 +52,9 @@ If your public IP changes, update the key on the portal or create a new key, the
 
 See [PRIVACY.md](PRIVACY.md) for the complete data-flow summary. Search text is not stored. The ranking database, card cache, and encrypted token are kept in `%LOCALAPPDATA%\RoyaleScout` and can be removed from inside the app.
 
-Security reporting and design notes are in [SECURITY.md](SECURITY.md). Never post your API token in an issue, screenshot, or log.
+Every release must pass tests, `npm audit`, `govulncheck`, and a ClamAV scan of the finished archive. Source changes are also analyzed by CodeQL. GitHub signs the ZIP provenance attestation, while SHA-256 checksums and an SBOM are published with the download. All steps are visible in **Actions**.
+
+These checks improve transparency but are not an absolute security guarantee. Security reporting and design notes are in [SECURITY.md](SECURITY.md). Never post your API token in an issue, screenshot, or log.
 
 ## Build from source
 
@@ -54,7 +68,7 @@ go vet ./...
 wails build -clean -trimpath -platform windows/amd64 -o RoyaleScout.exe
 ```
 
-Run `.\scripts\package-release.ps1 -Version 0.1.0` to create a local release ZIP and checksum.
+Run `.\scripts\package-release.ps1 -Version 0.2.0` to create a local release ZIP and checksum.
 
 ## Legal
 
