@@ -1,0 +1,35 @@
+html {
+    min-width: 320px;
+    min-height: 100%;
+    background: #0b111b;
+    color-scheme: dark;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+}
+
+body {
+    min-width: 320px;
+    min-height: 100vh;
+    margin: 0;
+    color: #f4f7fb;
+    background: #0b111b;
+    font-family: "Segoe UI Variable Text", "Segoe UI", -apple-system, BlinkMacSystemFont, Roboto, Arial, sans-serif;
+}
+
+body, button, input {
+    font-variant-numeric: tabular-nums;
+}
+
+button:focus-visible, input:focus-visible {
+    outline: 2px solid rgba(124, 227, 195, 0.8);
+    outline-offset: 3px;
+}
+
+::selection {
+    color: #071610;
+    background: #7ce3c3;
+}
+
+#root {
+    min-height: 100vh;
+}

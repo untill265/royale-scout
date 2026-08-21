@@ -1,0 +1,20 @@
+{
+  "$schema": "https://wails.io/schemas/config.v2.json",
+  "name": "RoyaleScout",
+  "outputfilename": "royale-scout",
+  "frontend:install": "npm ci",
+  "frontend:build": "npm run build",
+  "frontend:dev:watcher": "npm run dev",
+  "frontend:dev:serverUrl": "auto",
+  "author": {
+    "name": "Royale Scout",
+    "email": ""
+  },
+  "info": {
+    "companyName": "Royale Scout Contributors",
+    "productName": "Royale Scout",
+    "productVersion": "0.1.0",
+    "copyright": "Copyright (c) 2026 Royale Scout Contributors",
+    "comments": "Unofficial Clash Royale fan utility. Not endorsed by Supercell."
+  }
+}

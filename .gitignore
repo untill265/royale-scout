@@ -1,0 +1,31 @@
+build/bin
+frontend/dist
+frontend/node_modules
+release/
+*.zip
+*.sha256
+SHA256SUMS.txt
+
+# Local secrets and runtime data
+config.local.json
+credentials.bin
+.env
+.env.*
+!.env.example
+*.db
+*.db-shm
+*.db-wal
+*.log
+
+# Local build caches
+.cache/
+.gocache/
+.gomodcache/
+.npm-cache/
+coverage/
+
+# Editors and operating systems
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db

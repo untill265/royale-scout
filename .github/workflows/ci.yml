@@ -1,0 +1,55 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Build frontend
+        shell: pwsh
+        run: |
+          npm ci --prefix frontend
+          npm run build --prefix frontend
+
+      - name: Test backend
+        run: go test ./...
+
+      - name: Vet backend
+        run: go vet ./...
+
+      - name: Verify no distributable secrets are tracked
+        shell: pwsh
+        run: |
+          $forbidden = git ls-files | Where-Object {
+            $_ -match '(^|/)(config\.local\.json|credentials\.bin)$' -or
+            $_ -match '\.(db|db-wal|db-shm)$'
+          }
+          if ($forbidden) {
+            $forbidden | Write-Error
+            throw 'Local secrets or runtime data are tracked.'
+          }
