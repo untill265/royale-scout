@@ -25,7 +25,7 @@ import (
 )
 
 const (
-	applicationVersion       = "0.2.0"
+	applicationVersion       = "0.2.1"
 	leaderboardSyncInterval  = 5 * time.Minute
 	tokenVerificationTimeout = 30 * time.Second
 	ignoreLegacyConfigEnv    = "ROYALE_SCOUT_IGNORE_LEGACY_CONFIG"

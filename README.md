@@ -24,7 +24,7 @@
 3. При желании проверьте контрольную сумму:
 
    ```powershell
-   Get-FileHash .\RoyaleScout-v0.2.0-windows-x64.zip -Algorithm SHA256
+   Get-FileHash .\RoyaleScout-v0.2.1-windows-x64.zip -Algorithm SHA256
    ```
 
 4. Распакуйте ZIP в обычную папку и запустите `RoyaleScout.exe`.
@@ -34,7 +34,7 @@
 Для дополнительной проверки установите [GitHub CLI](https://cli.github.com/) и подтвердите, что ZIP действительно создан GitHub Actions из этого репозитория:
 
 ```powershell
-gh attestation verify .\RoyaleScout-v0.2.0-windows-x64.zip --repo untill265/royale-scout
+gh attestation verify .\RoyaleScout-v0.2.1-windows-x64.zip --repo untill265/royale-scout
 ```
 
 В каждом релизе также публикуется файл `sbom.spdx.json` — машиночитаемый список компонентов и зависимостей сборки.
@@ -95,10 +95,10 @@ wails dev
 Сборка релизного ZIP:
 
 ```powershell
-.\scripts\package-release.ps1 -Version 0.2.0
+.\scripts\package-release.ps1 -Version 0.2.1
 ```
 
-CI проверяет проект на Windows, а workflow релиза собирает, инвентаризирует, сканирует и аттестует ZIP при публикации тега вида `v0.2.0`.
+CI проверяет проект на Windows, а workflow релиза собирает, инвентаризирует, сканирует и аттестует ZIP при публикации тега вида `v0.2.1`.
 
 ## Правовой статус
 
