@@ -29,7 +29,7 @@ The app is not yet signed with a paid code-signing certificate, so Microsoft Def
 For an additional provenance check, install [GitHub CLI](https://cli.github.com/) and run:
 
 ```powershell
-gh attestation verify .\RoyaleScout-v0.2.1-windows-x64.zip --repo untill265/royale-scout
+gh attestation verify .\RoyaleScout-v0.2.2-windows-x64.zip --repo untill265/royale-scout
 ```
 
 Every release also includes an `sbom.spdx.json` file containing a machine-readable inventory of build components and dependencies.
@@ -68,7 +68,7 @@ go vet ./...
 wails build -clean -trimpath -platform windows/amd64 -o RoyaleScout.exe
 ```
 
-Run `.\scripts\package-release.ps1 -Version 0.2.1` to create a local release ZIP and checksum.
+Run `.\scripts\package-release.ps1 -Version 0.2.2` to create a local release ZIP and checksum.
 
 ## Legal
 

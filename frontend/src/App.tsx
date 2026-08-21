@@ -984,7 +984,7 @@ function App() {
                         </div>
 
                         <div className="settings-meta">
-                            <span>Royale Scout</span><span>·</span><span>{t.version} {appInfo?.version ?? '0.2.1'}</span>
+                            <span>Royale Scout</span><span>·</span><span>{t.version} {appInfo?.version ?? '0.2.2'}</span>
                         </div>
                     </section>
                 </div>

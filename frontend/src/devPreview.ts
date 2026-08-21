@@ -9,7 +9,7 @@ export function installDevPreview() {
     const previewApp = {
         GetStatus: async () => ({state, hasToken: state !== 'setupRequired', errorCode: state === 'error' ? 'apiConnection' : ''}),
         GetAppInfo: async () => ({
-            version: '0.2.1-preview',
+            version: '0.2.2-preview',
             dataDirectory: 'C:\\Users\\Preview\\AppData\\Local\\RoyaleScout',
             tokenStorage: 'windows-dpapi',
         }),

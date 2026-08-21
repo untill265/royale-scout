@@ -1,7 +1,7 @@
 param(
     [Parameter(Mandatory = $false)]
     [ValidatePattern('^\d+\.\d+\.\d+([-.][0-9A-Za-z.-]+)?$')]
-    [string]$Version = '0.2.1'
+    [string]$Version = '0.2.2'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -35,6 +35,15 @@ try {
     wails build -trimpath -platform windows/amd64 -o $buildOutputName
     if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $buildOutputPath -PathType Leaf)) {
         throw 'Wails did not produce a fresh release executable.'
+    }
+
+    $versionInfo = (Get-Item -LiteralPath $buildOutputPath).VersionInfo
+    if ($versionInfo.FileVersion -ne $Version -or $versionInfo.ProductVersion -ne $Version) {
+        throw "Windows executable metadata is invalid: file='$($versionInfo.FileVersion)', product='$($versionInfo.ProductVersion)', expected='$Version'."
+    }
+    if ($versionInfo.ProductName -ne $wailsConfiguration.info.productName -or
+        $versionInfo.CompanyName -ne $wailsConfiguration.info.companyName) {
+        throw 'Windows executable product metadata does not match wails.json.'
     }
 
     New-Item -ItemType Directory -Path $stageDirectory | Out-Null
