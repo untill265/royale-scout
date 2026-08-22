@@ -9,9 +9,11 @@ import {
 } from '../wailsjs/go/main/App';
 import {BrowserOpenURL} from '../wailsjs/runtime/runtime';
 import './App.css';
+import {ElixirIcon, TopRanking} from './TopRanking';
 
 type Locale = 'ru' | 'en';
 type Screen = 'search' | 'candidates' | 'decks';
+type Module = 'scout' | 'top';
 type AppState = 'setupRequired' | 'initializing' | 'ready' | 'waitingForSeason' | 'error';
 
 interface StatusResponse {
@@ -53,6 +55,7 @@ interface DeckCard {
 interface DeckMatch {
     battleTime: string;
     cards: DeckCard[];
+    averageElixir: number;
 }
 
 interface DeckResponse {
@@ -67,6 +70,8 @@ const translations = {
     ru: {
         appName: 'Royale Scout',
         moduleName: 'Opponent Deck Scout',
+        navScout: 'Скаут',
+        navTop: 'Топ 250',
         eyebrow: 'Быстрый разведчик колод',
         title: 'Найдите колоду соперника\nза несколько секунд',
         description: 'Введите Ranked-медали и желательно часть ника — так поиск точнее. Мы покажем до трёх последних Ranked-колод.',
@@ -144,6 +149,7 @@ const translations = {
         loadingDecks: 'Загружаем колоды…',
         spells: 'Заклинания',
         noSpells: 'В этой колоде нет заклинаний',
+        averageElixir: 'Средний эликсир',
         language: 'Язык',
         settingsButton: 'Настройки',
         setupEyebrow: 'Безопасный первый запуск',
@@ -212,6 +218,8 @@ const translations = {
     en: {
         appName: 'Royale Scout',
         moduleName: 'Opponent Deck Scout',
+        navScout: 'Scout',
+        navTop: 'Top 250',
         eyebrow: 'Fast deck intelligence',
         title: 'Find your opponent’s deck\nin a few seconds',
         description: 'Enter Ranked medals and preferably part of the nickname for a more precise match. See up to three recent Ranked decks.',
@@ -289,6 +297,7 @@ const translations = {
         loadingDecks: 'Loading decks…',
         spells: 'Spells',
         noSpells: 'This deck has no spells',
+        averageElixir: 'Average elixir',
         language: 'Language',
         settingsButton: 'Settings',
         setupEyebrow: 'Secure first launch',
@@ -361,6 +370,7 @@ function App() {
     const [status, setStatus] = useState<AppState>('initializing');
     const [hasToken, setHasToken] = useState(false);
     const [appInfo, setAppInfo] = useState<AppInfoResponse | null>(null);
+    const [activeModule, setActiveModule] = useState<Module>('scout');
     const [screen, setScreen] = useState<Screen>('search');
     const [input, setInput] = useState('');
     const [requireTargetScript, setRequireTargetScript] = useState(false);
@@ -517,6 +527,11 @@ function App() {
         window.setTimeout(() => inputRef.current?.focus(), 40);
     }
 
+    function openScout(reset = false) {
+        setActiveModule('scout');
+        if (reset) resetSearch();
+    }
+
     function backToCandidates() {
         setDecks(null);
         setSelectedPlayer(null);
@@ -601,18 +616,25 @@ function App() {
     }
 
     return (
-        <div className="app-shell">
+        <div className={`app-shell ${activeModule === 'top' ? 'top-ranking-active' : ''}`}>
             <div className="ambient ambient-one"/>
             <div className="ambient ambient-two"/>
 
             <header className="topbar">
-                <button className="brand" type="button" onClick={resetSearch} aria-label={t.appName}>
+                <button className="brand" type="button" onClick={() => openScout(true)} aria-label={t.appName}>
                     <span className="brand-mark" aria-hidden="true"><span>R</span></span>
                     <span className="brand-copy">
                         <strong>{t.appName}</strong>
                         <small>{t.moduleName}</small>
                     </span>
                 </button>
+
+                {status === 'ready' && (
+                    <nav className="module-switch" aria-label={t.appName}>
+                        <button className={activeModule === 'scout' ? 'active' : ''} type="button" onClick={() => openScout(false)}><SearchIcon/>{t.navScout}</button>
+                        <button className={activeModule === 'top' ? 'active' : ''} type="button" onClick={() => setActiveModule('top')}><RankingIcon/>{t.navTop}</button>
+                    </nav>
+                )}
 
                 <div className="topbar-actions">
                     <button
@@ -646,6 +668,8 @@ function App() {
                     />
                 ) : status !== 'ready' ? (
                     <StatusView state={status} locale={locale} onOpenSettings={() => setSettingsOpen(true)}/>
+                ) : activeModule === 'top' ? (
+                    <TopRanking locale={locale}/>
                 ) : screen === 'search' ? (
                     <section className="search-layout">
                         <div className="hero-copy">
@@ -779,6 +803,11 @@ function App() {
                                                 <strong>{t.match} {index + 1}</strong>
                                                 <small>{formatRelativeTime(match.battleTime, locale, t)}</small>
                                             </div>
+                                            <span className="deck-elixir" title={t.averageElixir}>
+                                                <ElixirIcon/>
+                                                <strong>{match.averageElixir > 0 ? match.averageElixir.toFixed(1) : '—'}</strong>
+                                                <small>{t.averageElixir}</small>
+                                            </span>
                                         </div>
                                         <div className="card-grid">
                                             {match.cards.map((card, cardIndex) => (
@@ -984,7 +1013,7 @@ function App() {
                         </div>
 
                         <div className="settings-meta">
-                            <span>Royale Scout</span><span>·</span><span>{t.version} {appInfo?.version ?? '0.2.2'}</span>
+                            <span>Royale Scout</span><span>·</span><span>{t.version} {appInfo?.version ?? '0.3.3'}</span>
                         </div>
                     </section>
                 </div>
@@ -1175,6 +1204,7 @@ const ResetIcon = () => <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 
 const BackIcon = () => <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14 5-7 7 7 7"/><path d="M7 12h13"/></svg>;
 const InfoIcon = () => <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v6m0-10v.1"/></svg>;
 const CardsIcon = () => <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="m9 13 3-3 3 3-3 3z"/></svg>;
+const RankingIcon = () => <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 20V10h4v10m2 0V4h4v16m2 0v-7h4v7"/><path d="M3 20h19"/></svg>;
 const SpellIcon = () => <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m13 2-8 12h6l-1 8 9-13h-6z"/></svg>;
 const CrownIcon = () => <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m3 7 5 4 4-7 4 7 5-4-2 11H5z"/><path d="M6 21h12"/></svg>;
 const SeasonIcon = () => <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v18M3 12h18M5.6 5.6l12.8 12.8m0-12.8L5.6 18.4"/><circle cx="12" cy="12" r="3"/></svg>;

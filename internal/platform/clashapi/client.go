@@ -60,7 +60,7 @@ func New(token string, options ...Option) (*Client, error) {
 		baseURL:       DefaultBaseURL,
 		token:         trimmedToken,
 		http:          netpolicy.NewHTTPSClient(20*time.Second, "api.clashroyale.com"),
-		userAgent:     "RoyaleScout/0.1",
+		userAgent:     "RoyaleScout/0.3.3",
 		maxAttempts:   4,
 		retryBaseWait: 250 * time.Millisecond,
 	}

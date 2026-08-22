@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -18,6 +19,8 @@ import (
 )
 
 const maximumImageBytes = 5 << 20
+
+const AssetRoutePrefix = "/card-assets/"
 
 type downloadFlight struct {
 	done chan struct{}
@@ -78,6 +81,64 @@ func (cache *Cache) DataURL(ctx context.Context, request battlelog.CardImageRequ
 	return dataURL, nil
 }
 
+func (cache *Cache) AssetURL(ctx context.Context, request battlelog.CardImageRequest) (string, error) {
+	if request.Key == "" || request.URL == "" {
+		return "", errors.New("card image key and URL are required")
+	}
+	if !safeKey(request.Key) {
+		return "", errors.New("card image key contains unsupported characters")
+	}
+	if err := cache.ensureFile(ctx, request); err != nil {
+		return "", err
+	}
+	return AssetRoutePrefix + url.PathEscape(request.Key), nil
+}
+
+func (cache *Cache) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
+	if request.Method != http.MethodGet && request.Method != http.MethodHead {
+		writer.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	if !strings.HasPrefix(request.URL.Path, AssetRoutePrefix) {
+		http.NotFound(writer, request)
+		return
+	}
+	key, err := url.PathUnescape(strings.TrimPrefix(request.URL.Path, AssetRoutePrefix))
+	if err != nil || !safeKey(key) || strings.Contains(key, "/") || strings.Contains(key, "\\") {
+		http.NotFound(writer, request)
+		return
+	}
+
+	file, err := os.Open(cache.path(key))
+	if errors.Is(err, os.ErrNotExist) {
+		http.NotFound(writer, request)
+		return
+	}
+	if err != nil {
+		http.Error(writer, "card image unavailable", http.StatusInternalServerError)
+		return
+	}
+	defer file.Close()
+	info, err := file.Stat()
+	if err != nil || !info.Mode().IsRegular() || info.Size() > maximumImageBytes {
+		http.NotFound(writer, request)
+		return
+	}
+
+	buffer := make([]byte, 512)
+	read, _ := file.Read(buffer)
+	contentType := http.DetectContentType(buffer[:read])
+	if !strings.HasPrefix(contentType, "image/") {
+		http.NotFound(writer, request)
+		return
+	}
+	_, _ = file.Seek(0, io.SeekStart)
+	writer.Header().Set("Content-Type", contentType)
+	writer.Header().Set("Cache-Control", "private, max-age=86400, immutable")
+	writer.Header().Set("X-Content-Type-Options", "nosniff")
+	http.ServeContent(writer, request, key, info.ModTime(), file)
+}
+
 func (cache *Cache) Preload(ctx context.Context, requests []battlelog.CardImageRequest, concurrency int) error {
 	if concurrency < 1 {
 		concurrency = 1
@@ -90,7 +151,7 @@ func (cache *Cache) Preload(ctx context.Context, requests []battlelog.CardImageR
 		go func() {
 			defer workers.Done()
 			for request := range jobs {
-				if _, err := cache.DataURL(ctx, request); err != nil {
+				if _, err := cache.AssetURL(ctx, request); err != nil {
 					errorsChannel <- err
 				}
 			}

@@ -76,9 +76,12 @@ func run() error {
 		if len(match.Cards) != 8 {
 			return fmt.Errorf("deck has %d cards, want 8", len(match.Cards))
 		}
+		if match.AverageElixir <= 0 {
+			return fmt.Errorf("deck has invalid average elixir %.1f", match.AverageElixir)
+		}
 		for _, card := range match.Cards {
-			if !strings.HasPrefix(card.ImageURL, "data:image/") {
-				return fmt.Errorf("card %d has no cached data image", card.ID)
+			if !strings.HasPrefix(card.ImageURL, cardcache.AssetRoutePrefix) {
+				return fmt.Errorf("card %d has no local cached asset URL", card.ID)
 			}
 		}
 	}

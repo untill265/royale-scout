@@ -1,6 +1,6 @@
 # Royale Scout
 
-**Royale Scout** is a local Windows app for manually finding a Clash Royale opponent by Ranked medals and a nickname fragment. It displays up to three recent Ranked decks and highlights true spells separately.
+**Royale Scout** is a local Windows app for finding a Clash Royale opponent by Ranked medals and a nickname fragment. It displays up to three recent Ranked decks, highlights true spells separately, and includes the current global top 250 with each player's latest deck.
 
 [![CI](https://github.com/untill265/royale-scout/actions/workflows/ci.yml/badge.svg)](https://github.com/untill265/royale-scout/actions/workflows/ci.yml)
 [![CodeQL](https://github.com/untill265/royale-scout/actions/workflows/codeql.yml/badge.svg)](https://github.com/untill265/royale-scout/actions/workflows/codeql.yml)
@@ -15,7 +15,15 @@
 - no analytics or search history;
 - the personal API token is encrypted with Windows DPAPI and stays on the user's PC;
 - network requests are restricted to `api.clashroyale.com` and `api-assets.clashroyale.com`;
+- Top 250, opponent search, and deck loading are isolated so ranking activity cannot hold up a new search;
+- card images and clan badges are served locally, without third-party advertising or analytics services;
 - Russian and English UI.
+
+## Top 250
+
+The **Top 250** section shows the current global Ranked leaderboard with rank, nickname, clan and badge, medals, the latest Ranked deck, and match time. Players and clans can be filtered locally.
+
+The leaderboard comes from a local snapshot. Battle logs and card images load in small batches only for rows near the viewport; switching back to Deck Scout cancels ranking work and gives opponent search priority.
 
 ## Install
 
@@ -29,7 +37,7 @@ The app is not yet signed with a paid code-signing certificate, so Microsoft Def
 For an additional provenance check, install [GitHub CLI](https://cli.github.com/) and run:
 
 ```powershell
-gh attestation verify .\RoyaleScout-v0.2.2-windows-x64.zip --repo untill265/royale-scout
+gh attestation verify .\RoyaleScout-v0.3.3-windows-x64.zip --repo untill265/royale-scout
 ```
 
 Every release also includes an `sbom.spdx.json` file containing a machine-readable inventory of build components and dependencies.
@@ -47,6 +55,8 @@ The app needs a free personal key from the official Clash Royale API. It does no
 The app verifies the key directly with the official API and encrypts it for the current Windows account. A saved token is never displayed again; it can only be replaced in **Settings**.
 
 If your public IP changes, update the key on the portal or create a new key, then use **Settings → Replace token**.
+
+Each displayed deck includes its average elixir cost in the upper-right corner.
 
 ## Privacy
 
@@ -68,7 +78,7 @@ go vet ./...
 wails build -clean -trimpath -platform windows/amd64 -o RoyaleScout.exe
 ```
 
-Run `.\scripts\package-release.ps1 -Version 0.2.2` to create a local release ZIP and checksum.
+Run `.\scripts\package-release.ps1 -Version 0.3.3` to create a local release ZIP and checksum.
 
 ## Legal
 

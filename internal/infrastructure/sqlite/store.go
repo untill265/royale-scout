@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"royalescout/internal/domain/player"
+	"royalescout/internal/domain/topplayer"
 
 	_ "modernc.org/sqlite"
 )
@@ -70,11 +71,114 @@ func (store *Store) prepare(ctx context.Context) error {
 			key TEXT PRIMARY KEY,
 			value TEXT NOT NULL
 		)`,
+		`CREATE TABLE IF NOT EXISTS top_players (
+			rank INTEGER PRIMARY KEY,
+			tag TEXT NOT NULL UNIQUE,
+			name TEXT NOT NULL,
+			ranked_rating INTEGER NOT NULL,
+			clan_tag TEXT NOT NULL,
+			clan_name TEXT NOT NULL,
+			clan_badge_id INTEGER NOT NULL,
+			synced_at_unix INTEGER NOT NULL
+		)`,
 	}
 	for _, statement := range statements {
 		if _, err := store.database.ExecContext(ctx, statement); err != nil {
 			return fmt.Errorf("prepare SQLite database: %w", err)
 		}
+	}
+	return nil
+}
+
+func (store *Store) ReplaceTopSnapshot(ctx context.Context, players []topplayer.Player, syncedAt time.Time) error {
+	transaction, err := store.database.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin top player snapshot transaction: %w", err)
+	}
+	defer func() { _ = transaction.Rollback() }()
+
+	if _, err := transaction.ExecContext(ctx, `DELETE FROM top_players`); err != nil {
+		return fmt.Errorf("clear top player snapshot: %w", err)
+	}
+	insert, err := transaction.PrepareContext(ctx, `
+		INSERT INTO top_players (
+			rank, tag, name, ranked_rating, clan_tag, clan_name,
+			clan_badge_id, synced_at_unix
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+	`)
+	if err != nil {
+		return fmt.Errorf("prepare top player insert: %w", err)
+	}
+	defer insert.Close()
+
+	syncedAtUnix := syncedAt.UTC().Unix()
+	for _, storedPlayer := range players {
+		if storedPlayer.Rank < 1 || storedPlayer.Rank > 250 || storedPlayer.Tag == "" {
+			return fmt.Errorf("invalid top player at rank %d", storedPlayer.Rank)
+		}
+		if _, err := insert.ExecContext(
+			ctx,
+			storedPlayer.Rank,
+			storedPlayer.Tag,
+			storedPlayer.Name,
+			storedPlayer.RankedRating,
+			storedPlayer.ClanTag,
+			storedPlayer.ClanName,
+			storedPlayer.ClanBadgeID,
+			syncedAtUnix,
+		); err != nil {
+			return fmt.Errorf("insert top player %q: %w", storedPlayer.Tag, err)
+		}
+	}
+	if err := insert.Close(); err != nil {
+		return fmt.Errorf("close top player insert: %w", err)
+	}
+	if err := transaction.Commit(); err != nil {
+		return fmt.Errorf("commit top player snapshot: %w", err)
+	}
+	return nil
+}
+
+func (store *Store) ListTop(ctx context.Context) ([]topplayer.Player, error) {
+	rows, err := store.database.QueryContext(ctx, `
+		SELECT rank, tag, name, ranked_rating, clan_tag, clan_name,
+		       clan_badge_id, synced_at_unix
+		FROM top_players
+		ORDER BY rank
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("query top players: %w", err)
+	}
+	defer rows.Close()
+
+	players := make([]topplayer.Player, 0, 250)
+	for rows.Next() {
+		var stored topplayer.Player
+		var syncedAtUnix int64
+		if err := rows.Scan(
+			&stored.Rank,
+			&stored.Tag,
+			&stored.Name,
+			&stored.RankedRating,
+			&stored.ClanTag,
+			&stored.ClanName,
+			&stored.ClanBadgeID,
+			&syncedAtUnix,
+		); err != nil {
+			return nil, fmt.Errorf("scan top player: %w", err)
+		}
+		stored.SyncedAt = time.Unix(syncedAtUnix, 0).UTC()
+		players = append(players, stored)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate top players: %w", err)
+	}
+	return players, nil
+}
+
+func (store *Store) ClearTop(ctx context.Context) error {
+	if _, err := store.database.ExecContext(ctx, `DELETE FROM top_players`); err != nil {
+		return fmt.Errorf("clear top players: %w", err)
 	}
 	return nil
 }

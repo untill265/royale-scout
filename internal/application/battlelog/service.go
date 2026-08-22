@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"sort"
 	"sync"
 	"time"
@@ -31,6 +32,10 @@ type CardImageCache interface {
 	DataURL(context.Context, CardImageRequest) (string, error)
 }
 
+type LocalCardImageCache interface {
+	AssetURL(context.Context, CardImageRequest) (string, error)
+}
+
 type Service struct {
 	api    API
 	images CardImageCache
@@ -42,8 +47,9 @@ type Result struct {
 }
 
 type DeckMatch struct {
-	BattleTime string     `json:"battleTime"`
-	Cards      []DeckCard `json:"cards"`
+	BattleTime    string     `json:"battleTime"`
+	Cards         []DeckCard `json:"cards"`
+	AverageElixir float64    `json:"averageElixir"`
 }
 
 type DeckCard struct {
@@ -59,8 +65,15 @@ func NewService(api API, images CardImageCache) Service {
 }
 
 func (service Service) LatestRankedDecks(ctx context.Context, playerTag string) (Result, error) {
+	return service.LatestRankedDecksLimit(ctx, playerTag, maximumBattles)
+}
+
+func (service Service) LatestRankedDecksLimit(ctx context.Context, playerTag string, limit int) (Result, error) {
 	if playerTag == "" {
 		return Result{}, errors.New("player tag is empty")
+	}
+	if limit < 1 || limit > maximumBattles {
+		return Result{}, fmt.Errorf("ranked deck limit must be between 1 and %d", maximumBattles)
 	}
 	battles, _, err := service.api.BattleLog(ctx, playerTag)
 	if err != nil {
@@ -76,8 +89,8 @@ func (service Service) LatestRankedDecks(ctx context.Context, playerTag string) 
 	sort.SliceStable(ranked, func(left, right int) bool {
 		return parsedBattleTime(ranked[left].BattleTime).After(parsedBattleTime(ranked[right].BattleTime))
 	})
-	if len(ranked) > maximumBattles {
-		ranked = ranked[:maximumBattles]
+	if len(ranked) > limit {
+		ranked = ranked[:limit]
 	}
 
 	result := Result{PlayerTag: playerTag, Matches: make([]DeckMatch, len(ranked))}
@@ -94,6 +107,13 @@ func (service Service) LatestRankedDecks(ctx context.Context, playerTag string) 
 func (service Service) toDeckMatch(ctx context.Context, battle clashapi.Battle) (DeckMatch, error) {
 	playedAt := parsedBattleTime(battle.BattleTime)
 	match := DeckMatch{Cards: make([]DeckCard, len(battle.Team[0].Cards))}
+	elixirTotal := 0
+	for _, card := range battle.Team[0].Cards {
+		elixirTotal += card.ElixirCost
+	}
+	if len(battle.Team[0].Cards) > 0 {
+		match.AverageElixir = math.Round((float64(elixirTotal)/float64(len(battle.Team[0].Cards)))*10) / 10
+	}
 	if !playedAt.IsZero() {
 		match.BattleTime = playedAt.Format(time.RFC3339)
 	}
@@ -110,9 +130,9 @@ func (service Service) toDeckMatch(ctx context.Context, battle clashapi.Battle) 
 		go func() {
 			defer workers.Done()
 			asset, form := cardforms.ResolveBattleCard(card)
-			dataURL, err := service.images.DataURL(ctx, CardImageRequest{Key: asset.Key, URL: asset.URL})
+			imageURL, err := service.imageURL(ctx, CardImageRequest{Key: asset.Key, URL: asset.URL})
 			if err != nil && form != cardforms.Normal && card.IconURLs.Medium != "" {
-				dataURL, err = service.images.DataURL(ctx, CardImageRequest{
+				imageURL, err = service.imageURL(ctx, CardImageRequest{
 					Key: fmt.Sprintf("%d", card.ID),
 					URL: card.IconURLs.Medium,
 				})
@@ -122,7 +142,7 @@ func (service Service) toDeckMatch(ctx context.Context, battle clashapi.Battle) 
 				card: DeckCard{
 					ID:       card.ID,
 					Name:     card.Name,
-					ImageURL: dataURL,
+					ImageURL: imageURL,
 					Form:     form,
 					IsSpell:  isSpell(card.ID),
 				},
@@ -142,6 +162,13 @@ func (service Service) toDeckMatch(ctx context.Context, battle clashapi.Battle) 
 		match.Cards[result.index] = result.card
 	}
 	return match, nil
+}
+
+func (service Service) imageURL(ctx context.Context, request CardImageRequest) (string, error) {
+	if localCache, supported := service.images.(LocalCardImageCache); supported {
+		return localCache.AssetURL(ctx, request)
+	}
+	return service.images.DataURL(ctx, request)
 }
 
 func isSpell(cardID int64) bool {

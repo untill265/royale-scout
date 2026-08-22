@@ -31,6 +31,13 @@ type LeaderboardPlayer struct {
 	ExpLevel  int    `json:"expLevel"`
 	EloRating int    `json:"eloRating"`
 	Rank      int    `json:"rank"`
+	Clan      *Clan  `json:"clan"`
+}
+
+type Clan struct {
+	Tag     string `json:"tag"`
+	Name    string `json:"name"`
+	BadgeID int64  `json:"badgeId"`
 }
 
 type Battle struct {

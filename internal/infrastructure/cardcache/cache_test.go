@@ -57,3 +57,38 @@ func TestSafeKeyAcceptsCardAndEvolutionKeysOnly(t *testing.T) {
 		}
 	}
 }
+
+func TestAssetURLServesOnlyValidatedCachedImages(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		writer.Header().Set("Content-Type", "image/png")
+		_, _ = writer.Write([]byte("\x89PNG\r\n\x1a\nimage-data"))
+	}))
+	defer server.Close()
+
+	cache, err := New(t.TempDir())
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	cache.http = server.Client()
+	assetURL, err := cache.AssetURL(context.Background(), battlelog.CardImageRequest{Key: "26000000", URL: server.URL})
+	if err != nil {
+		t.Fatalf("AssetURL() error = %v", err)
+	}
+	if assetURL != "/card-assets/26000000" {
+		t.Fatalf("AssetURL() = %q", assetURL)
+	}
+
+	request := httptest.NewRequest(http.MethodGet, assetURL, nil)
+	response := httptest.NewRecorder()
+	cache.ServeHTTP(response, request)
+	if response.Code != http.StatusOK || !strings.HasPrefix(response.Header().Get("Content-Type"), "image/") {
+		t.Fatalf("ServeHTTP() status=%d content-type=%q", response.Code, response.Header().Get("Content-Type"))
+	}
+
+	unsafeRequest := httptest.NewRequest(http.MethodGet, "/card-assets/..%2Fcredentials.bin", nil)
+	unsafeResponse := httptest.NewRecorder()
+	cache.ServeHTTP(unsafeResponse, unsafeRequest)
+	if unsafeResponse.Code != http.StatusNotFound {
+		t.Fatalf("unsafe ServeHTTP() status=%d, want 404", unsafeResponse.Code)
+	}
+}

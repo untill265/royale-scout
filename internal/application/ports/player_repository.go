@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"royalescout/internal/domain/player"
+	"royalescout/internal/domain/topplayer"
 )
 
 type PlayerRepository interface {
@@ -17,4 +18,10 @@ type PlayerRepository interface {
 type MetadataRepository interface {
 	Get(ctx context.Context, key string) (string, bool, error)
 	Set(ctx context.Context, key, value string) error
+}
+
+type TopPlayerRepository interface {
+	ReplaceTopSnapshot(ctx context.Context, players []topplayer.Player, syncedAt time.Time) error
+	ListTop(ctx context.Context) ([]topplayer.Player, error)
+	ClearTop(ctx context.Context) error
 }

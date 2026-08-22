@@ -12,12 +12,14 @@ import (
 	"royalescout/internal/application/opponentscout"
 	"royalescout/internal/application/ports"
 	"royalescout/internal/domain/player"
+	"royalescout/internal/domain/topplayer"
 	"royalescout/internal/platform/clashapi"
 )
 
 const (
 	seasonMetadataKey    = "ranked_season_marker"
 	requiredGlobalTop    = 1000
+	visibleGlobalTop     = 250
 	leaderboardPageLimit = 1000
 )
 
@@ -37,14 +39,16 @@ type Status struct {
 }
 
 type Service struct {
-	api         API
-	players     ports.PlayerRepository
-	metadata    ports.MetadataRepository
-	normalizer  opponentscout.NicknameNormalizer
-	concurrency int
-	interval    time.Duration
-	statusMutex sync.RWMutex
-	status      Status
+	api          API
+	players      ports.PlayerRepository
+	topPlayers   ports.TopPlayerRepository
+	metadata     ports.MetadataRepository
+	normalizer   opponentscout.NicknameNormalizer
+	concurrency  int
+	interval     time.Duration
+	topSyncMutex sync.Mutex
+	statusMutex  sync.RWMutex
+	status       Status
 }
 
 func New(
@@ -60,7 +64,7 @@ func New(
 	if interval <= 0 {
 		interval = time.Minute
 	}
-	return &Service{
+	service := &Service{
 		api:         api,
 		players:     players,
 		metadata:    metadata,
@@ -68,6 +72,10 @@ func New(
 		concurrency: concurrency,
 		interval:    interval,
 	}
+	if topPlayers, supported := players.(ports.TopPlayerRepository); supported {
+		service.topPlayers = topPlayers
+	}
+	return service
 }
 
 func (service *Service) Run(ctx context.Context) {
@@ -130,6 +138,11 @@ func (service *Service) SyncOnce(ctx context.Context) error {
 		if err := service.players.ClearActive(ctx); err != nil {
 			return fmt.Errorf("clear players for new season: %w", err)
 		}
+		if service.topPlayers != nil {
+			if err := service.topPlayers.ClearTop(ctx); err != nil {
+				return fmt.Errorf("clear top players for new season: %w", err)
+			}
+		}
 		service.markWaitingForSeason()
 	}
 	if !seasonFound || seasonChanged {
@@ -138,13 +151,18 @@ func (service *Service) SyncOnce(ctx context.Context) error {
 		}
 	}
 
-	globalPage, _, err := service.api.PathOfLegendPlayers(ctx, "global", requiredGlobalTop, "")
+	globalComplete, err := service.syncGlobalTop(ctx)
 	if err != nil {
-		return fmt.Errorf("load global Path of Legend leaderboard: %w", err)
+		return err
 	}
-	if len(globalPage.Items) < requiredGlobalTop {
+	if !globalComplete {
 		if err := service.players.ClearActive(ctx); err != nil {
 			return fmt.Errorf("clear players while global leaderboard is incomplete: %w", err)
+		}
+		if service.topPlayers != nil {
+			if err := service.topPlayers.ClearTop(ctx); err != nil {
+				return fmt.Errorf("clear top players while global leaderboard is incomplete: %w", err)
+			}
 		}
 		service.markWaitingForSeason()
 		return nil
@@ -175,6 +193,66 @@ func (service *Service) SyncOnce(ctx context.Context) error {
 		status.WaitingForSeason = false
 		status.PlayerCount = len(snapshot)
 	})
+	return nil
+}
+
+// RefreshTop fetches and publishes only the global top ranking. It intentionally
+// skips the much heavier country-by-country player sync used by opponent search.
+func (service *Service) RefreshTop(ctx context.Context) error {
+	complete, err := service.syncGlobalTop(ctx)
+	if err != nil {
+		return err
+	}
+	if !complete {
+		return fmt.Errorf("global Path of Legend leaderboard is incomplete")
+	}
+	return nil
+}
+
+func (service *Service) syncGlobalTop(ctx context.Context) (bool, error) {
+	service.topSyncMutex.Lock()
+	defer service.topSyncMutex.Unlock()
+
+	globalPage, _, err := service.api.PathOfLegendPlayers(ctx, "global", requiredGlobalTop, "")
+	if err != nil {
+		return false, fmt.Errorf("load global Path of Legend leaderboard: %w", err)
+	}
+	if len(globalPage.Items) < requiredGlobalTop {
+		return false, nil
+	}
+	if err := service.publishGlobalTop(ctx, globalPage.Items); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+func (service *Service) publishGlobalTop(ctx context.Context, items []clashapi.LeaderboardPlayer) error {
+	if service.topPlayers == nil {
+		return nil
+	}
+	limit := min(visibleGlobalTop, len(items))
+	players := make([]topplayer.Player, 0, limit)
+	for _, apiPlayer := range items[:limit] {
+		stored := topplayer.Player{
+			Tag:          apiPlayer.Tag,
+			Name:         apiPlayer.Name,
+			Rank:         apiPlayer.Rank,
+			RankedRating: apiPlayer.EloRating,
+		}
+		if stored.Rank == 0 {
+			stored.Rank = len(players) + 1
+		}
+		if apiPlayer.Clan != nil {
+			stored.ClanTag = apiPlayer.Clan.Tag
+			stored.ClanName = apiPlayer.Clan.Name
+			stored.ClanBadgeID = apiPlayer.Clan.BadgeID
+		}
+		players = append(players, stored)
+	}
+	syncedAt := time.Now().UTC()
+	if err := service.topPlayers.ReplaceTopSnapshot(ctx, players, syncedAt); err != nil {
+		return fmt.Errorf("publish global top player snapshot: %w", err)
+	}
 	return nil
 }
 

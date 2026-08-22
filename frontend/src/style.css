@@ -1,10 +1,35 @@
 html {
     min-width: 320px;
     min-height: 100%;
+    overflow-x: hidden;
+    scrollbar-color: #465568 #0b111b;
+    scrollbar-width: thin;
     background: #0b111b;
     color-scheme: dark;
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;
+}
+
+html::-webkit-scrollbar {
+    width: 10px;
+}
+
+html::-webkit-scrollbar-track {
+    background: #0b111b;
+}
+
+html::-webkit-scrollbar-thumb {
+    border: 2px solid #0b111b;
+    border-radius: 999px;
+    background: #465568;
+}
+
+html::-webkit-scrollbar-thumb:hover {
+    background: #607087;
+}
+
+html::-webkit-scrollbar-button {
+    display: none;
 }
 
 body {

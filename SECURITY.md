@@ -25,13 +25,13 @@ These independent layers reduce risk and make the build process auditable. They 
 Download the Windows ZIP and `SHA256SUMS.txt` from the same release, then compare the ZIP hash:
 
 ```powershell
-Get-FileHash .\RoyaleScout-v0.2.2-windows-x64.zip -Algorithm SHA256
+Get-FileHash .\RoyaleScout-v0.3.3-windows-x64.zip -Algorithm SHA256
 ```
 
 With [GitHub CLI](https://cli.github.com/) installed, verify that GitHub Actions produced the exact ZIP from this repository:
 
 ```powershell
-gh attestation verify .\RoyaleScout-v0.2.2-windows-x64.zip --repo untill265/royale-scout
+gh attestation verify .\RoyaleScout-v0.3.3-windows-x64.zip --repo untill265/royale-scout
 ```
 
 The public workflow logs show the dependency audits, CodeQL results, checksum verification, malware scan, and release gate. The accompanying SPDX SBOM can be inspected with standard software-composition-analysis tools.

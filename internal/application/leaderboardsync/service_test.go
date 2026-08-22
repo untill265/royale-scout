@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"royalescout/internal/domain/player"
+	"royalescout/internal/domain/topplayer"
 	"royalescout/internal/platform/clashapi"
 )
 
@@ -36,6 +37,9 @@ func TestSyncOncePublishesCompleteCountrySnapshot(t *testing.T) {
 	}
 	if repository.players["#ONE"].NicknameNormalized != "suslik" {
 		t.Fatalf("normalized nickname = %q", repository.players["#ONE"].NicknameNormalized)
+	}
+	if len(repository.topPlayers) != visibleGlobalTop || repository.topPlayers[1].Tag != "#global0" {
+		t.Fatalf("top players = %d, first = %#v", len(repository.topPlayers), repository.topPlayers[1])
 	}
 }
 
@@ -87,6 +91,37 @@ func TestSyncOnceClearsPlayersAndWaitsForNewGlobalTop(t *testing.T) {
 	}
 }
 
+func TestRefreshTopPublishesGlobalRankingWithoutReplacingSearchSnapshot(t *testing.T) {
+	repository := newMemoryStore()
+	repository.players["#SEARCH"] = player.Player{Tag: "#SEARCH"}
+	api := &fakeAPI{global: makeLeaderboardPlayers(requiredGlobalTop, "fresh")}
+	service := New(api, repository, repository, 1, time.Minute)
+
+	if err := service.RefreshTop(context.Background()); err != nil {
+		t.Fatalf("RefreshTop() error = %v", err)
+	}
+	if len(repository.players) != 1 || repository.players["#SEARCH"].Tag != "#SEARCH" {
+		t.Fatalf("search snapshot was changed: %#v", repository.players)
+	}
+	if len(repository.topPlayers) != visibleGlobalTop || repository.topPlayers[1].Tag != "#fresh0" {
+		t.Fatalf("top players = %d, first = %#v", len(repository.topPlayers), repository.topPlayers[1])
+	}
+}
+
+func TestRefreshTopKeepsExistingRankingWhenResponseIsIncomplete(t *testing.T) {
+	repository := newMemoryStore()
+	repository.topPlayers[1] = topplayer.Player{Tag: "#OLD", Rank: 1}
+	api := &fakeAPI{global: makeLeaderboardPlayers(requiredGlobalTop-1, "partial")}
+	service := New(api, repository, repository, 1, time.Minute)
+
+	if err := service.RefreshTop(context.Background()); err == nil {
+		t.Fatal("RefreshTop() error = nil")
+	}
+	if len(repository.topPlayers) != 1 || repository.topPlayers[1].Tag != "#OLD" {
+		t.Fatalf("old top ranking was replaced: %#v", repository.topPlayers)
+	}
+}
+
 type fakeAPI struct {
 	seasons       []clashapi.Season
 	locations     []clashapi.Location
@@ -116,18 +151,28 @@ func (api *fakeAPI) PathOfLegendPlayers(_ context.Context, locationID string, _ 
 func makeLeaderboardPlayers(count int, prefix string) []clashapi.LeaderboardPlayer {
 	players := make([]clashapi.LeaderboardPlayer, count)
 	for index := range players {
-		players[index] = clashapi.LeaderboardPlayer{Tag: fmt.Sprintf("#%s%s", prefix, strconv.Itoa(index))}
+		players[index] = clashapi.LeaderboardPlayer{
+			Tag:       fmt.Sprintf("#%s%s", prefix, strconv.Itoa(index)),
+			Name:      fmt.Sprintf("Player %d", index+1),
+			Rank:      index + 1,
+			EloRating: 3300 - index,
+		}
 	}
 	return players
 }
 
 type memoryStore struct {
-	players  map[string]player.Player
-	metadata map[string]string
+	players    map[string]player.Player
+	topPlayers map[int]topplayer.Player
+	metadata   map[string]string
 }
 
 func newMemoryStore() *memoryStore {
-	return &memoryStore{players: make(map[string]player.Player), metadata: make(map[string]string)}
+	return &memoryStore{
+		players:    make(map[string]player.Player),
+		topPlayers: make(map[int]topplayer.Player),
+		metadata:   make(map[string]string),
+	}
 }
 
 func (store *memoryStore) SearchByRating(_ context.Context, minimum, maximum int) ([]player.Player, error) {
@@ -155,6 +200,28 @@ func (store *memoryStore) ClearActive(context.Context) error {
 
 func (store *memoryStore) Count(context.Context) (int, error) {
 	return len(store.players), nil
+}
+
+func (store *memoryStore) ReplaceTopSnapshot(_ context.Context, players []topplayer.Player, syncedAt time.Time) error {
+	store.topPlayers = make(map[int]topplayer.Player, len(players))
+	for _, stored := range players {
+		stored.SyncedAt = syncedAt
+		store.topPlayers[stored.Rank] = stored
+	}
+	return nil
+}
+
+func (store *memoryStore) ListTop(context.Context) ([]topplayer.Player, error) {
+	result := make([]topplayer.Player, 0, len(store.topPlayers))
+	for rank := 1; rank <= len(store.topPlayers); rank++ {
+		result = append(result, store.topPlayers[rank])
+	}
+	return result, nil
+}
+
+func (store *memoryStore) ClearTop(context.Context) error {
+	store.topPlayers = make(map[int]topplayer.Player)
+	return nil
 }
 
 func (store *memoryStore) Get(_ context.Context, key string) (string, bool, error) {

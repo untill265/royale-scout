@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"royalescout/internal/domain/player"
+	"royalescout/internal/domain/topplayer"
 )
 
 func TestReplaceSnapshotPublishesAtomicallyAndRemovesFormerPlayers(t *testing.T) {
@@ -45,6 +46,41 @@ func TestReplaceSnapshotPublishesAtomicallyAndRemovesFormerPlayers(t *testing.T)
 	}
 	if len(players) != 1 || players[0].Tag != "#TWO" || players[0].NicknameOriginal != "Two updated" {
 		t.Fatalf("players = %#v", players)
+	}
+}
+
+func TestTopPlayerSnapshotKeepsRankClanAndTimestamp(t *testing.T) {
+	store, err := Open(filepath.Join(t.TempDir(), "royale-scout.db"))
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+	defer store.Close()
+
+	ctx := context.Background()
+	syncedAt := time.Unix(300, 0).UTC()
+	players := []topplayer.Player{
+		{Rank: 2, Tag: "#TWO", Name: "Two", RankedRating: 3200},
+		{Rank: 1, Tag: "#ONE", Name: "One", RankedRating: 3250, ClanTag: "#CLAN", ClanName: "Clan", ClanBadgeID: 16000001},
+	}
+	if err := store.ReplaceTopSnapshot(ctx, players, syncedAt); err != nil {
+		t.Fatalf("ReplaceTopSnapshot() error = %v", err)
+	}
+	loaded, err := store.ListTop(ctx)
+	if err != nil {
+		t.Fatalf("ListTop() error = %v", err)
+	}
+	if len(loaded) != 2 || loaded[0].Tag != "#ONE" || loaded[1].Tag != "#TWO" {
+		t.Fatalf("top players = %#v", loaded)
+	}
+	if loaded[0].ClanBadgeID != 16000001 || !loaded[0].SyncedAt.Equal(syncedAt) {
+		t.Fatalf("first top player = %#v", loaded[0])
+	}
+	if err := store.ClearTop(ctx); err != nil {
+		t.Fatalf("ClearTop() error = %v", err)
+	}
+	loaded, err = store.ListTop(ctx)
+	if err != nil || len(loaded) != 0 {
+		t.Fatalf("ListTop() after clear = %#v, error %v", loaded, err)
 	}
 }
 

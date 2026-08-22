@@ -16,6 +16,7 @@ import (
 	"royalescout/internal/application/cardassets"
 	"royalescout/internal/application/leaderboardsync"
 	"royalescout/internal/application/opponentscout"
+	"royalescout/internal/application/topranking"
 	"royalescout/internal/infrastructure/cardcache"
 	"royalescout/internal/infrastructure/sqlite"
 	"royalescout/internal/platform/appdata"
@@ -25,7 +26,7 @@ import (
 )
 
 const (
-	applicationVersion       = "0.2.2"
+	applicationVersion       = "0.3.3"
 	leaderboardSyncInterval  = 5 * time.Minute
 	tokenVerificationTimeout = 30 * time.Second
 	ignoreLegacyConfigEnv    = "ROYALE_SCOUT_IGNORE_LEGACY_CONFIG"
@@ -61,6 +62,7 @@ type App struct {
 
 	operationMutex sync.RWMutex
 	stateMutex     sync.RWMutex
+	topMutex       sync.Mutex
 
 	paths      appdata.Paths
 	store      *sqlite.Store
@@ -72,6 +74,9 @@ type App struct {
 	syncService    *leaderboardsync.Service
 	searchService  opponentscout.SearchService
 	battleService  battlelog.Service
+	topService     *topranking.Service
+	topContext     context.Context
+	topCancel      context.CancelFunc
 
 	hasToken         bool
 	startupError     error
@@ -155,10 +160,12 @@ func (app *App) startServicesLocked(token string) error {
 	}
 
 	app.servicesCancel = cancel
+	battleService := battlelog.NewService(apiClient, app.imageCache)
 	app.stateMutex.Lock()
 	app.syncService = syncService
 	app.searchService = opponentscout.NewSearchService(app.store)
-	app.battleService = battlelog.NewService(apiClient, app.imageCache)
+	app.battleService = battleService
+	app.topService = topranking.New(app.store, battleService)
 	app.hasToken = true
 	app.startupError = nil
 	app.startupErrorCode = ""
@@ -180,6 +187,7 @@ func (app *App) startServicesLocked(token string) error {
 }
 
 func (app *App) stopServicesLocked() {
+	app.cancelTopDeckLoading()
 	if app.servicesCancel != nil {
 		app.servicesCancel()
 		app.servicesCancel = nil
@@ -189,6 +197,7 @@ func (app *App) stopServicesLocked() {
 	app.syncService = nil
 	app.searchService = opponentscout.SearchService{}
 	app.battleService = battlelog.Service{}
+	app.topService = nil
 	app.stateMutex.Unlock()
 }
 
@@ -243,6 +252,16 @@ func (app *App) GetAppInfo() AppInfo {
 		DataDirectory: app.paths.Root,
 		TokenStorage:  "windows-dpapi",
 	}
+}
+
+func (app *App) serveLocalAsset(writer http.ResponseWriter, request *http.Request) {
+	app.operationMutex.RLock()
+	defer app.operationMutex.RUnlock()
+	if app.imageCache == nil {
+		http.NotFound(writer, request)
+		return
+	}
+	app.imageCache.ServeHTTP(writer, request)
 }
 
 func (app *App) ConfigureAPIToken(token string) TokenSetupResult {
@@ -341,6 +360,7 @@ func samePath(left, right string) bool {
 }
 
 func (app *App) Search(input string, requireTargetScript bool) (opponentscout.SearchResult, error) {
+	app.cancelTopDeckLoading()
 	app.operationMutex.RLock()
 	defer app.operationMutex.RUnlock()
 	if err := app.ensureReady(); err != nil {
@@ -356,6 +376,7 @@ func (app *App) Search(input string, requireTargetScript bool) (opponentscout.Se
 }
 
 func (app *App) GetDecks(playerTag string) (battlelog.Result, error) {
+	app.cancelTopDeckLoading()
 	app.operationMutex.RLock()
 	defer app.operationMutex.RUnlock()
 	if err := app.ensureReady(); err != nil {
@@ -365,6 +386,79 @@ func (app *App) GetDecks(playerTag string) (battlelog.Result, error) {
 	service := app.battleService
 	app.stateMutex.RUnlock()
 	return service.LatestRankedDecks(app.ctx, playerTag)
+}
+
+func (app *App) GetTopPlayers() (topranking.Snapshot, error) {
+	app.operationMutex.RLock()
+	defer app.operationMutex.RUnlock()
+	if err := app.ensureReady(); err != nil {
+		return topranking.Snapshot{}, err
+	}
+	app.stateMutex.RLock()
+	service := app.topService
+	app.stateMutex.RUnlock()
+	if service == nil {
+		return topranking.Snapshot{}, ErrDatabaseNotReady
+	}
+	return service.Snapshot(app.ctx)
+}
+
+func (app *App) RefreshTopPlayers() (topranking.Snapshot, error) {
+	app.operationMutex.RLock()
+	defer app.operationMutex.RUnlock()
+	if err := app.ensureReady(); err != nil {
+		return topranking.Snapshot{}, err
+	}
+	app.stateMutex.RLock()
+	syncService := app.syncService
+	topService := app.topService
+	app.stateMutex.RUnlock()
+	if syncService == nil || topService == nil {
+		return topranking.Snapshot{}, ErrDatabaseNotReady
+	}
+	if err := syncService.RefreshTop(app.ctx); err != nil {
+		return topranking.Snapshot{}, err
+	}
+	return topService.Snapshot(app.ctx)
+}
+
+func (app *App) GetTopDecks(playerTags []string) (topranking.DeckBatch, error) {
+	app.operationMutex.RLock()
+	defer app.operationMutex.RUnlock()
+	if err := app.ensureReady(); err != nil {
+		return topranking.DeckBatch{}, err
+	}
+	app.stateMutex.RLock()
+	service := app.topService
+	app.stateMutex.RUnlock()
+	if service == nil {
+		return topranking.DeckBatch{}, ErrDatabaseNotReady
+	}
+	return service.Decks(app.topDeckContext(), playerTags)
+}
+
+func (app *App) CancelTopDeckLoading() ActionResult {
+	app.cancelTopDeckLoading()
+	return ActionResult{Success: true, Code: "ok"}
+}
+
+func (app *App) topDeckContext() context.Context {
+	app.topMutex.Lock()
+	defer app.topMutex.Unlock()
+	if app.topContext == nil || app.topContext.Err() != nil {
+		app.topContext, app.topCancel = context.WithCancel(app.ctx)
+	}
+	return app.topContext
+}
+
+func (app *App) cancelTopDeckLoading() {
+	app.topMutex.Lock()
+	defer app.topMutex.Unlock()
+	if app.topCancel != nil {
+		app.topCancel()
+	}
+	app.topContext = nil
+	app.topCancel = nil
 }
 
 func (app *App) ensureReady() error {

@@ -4,4 +4,6 @@ Royale Scout is built with open-source dependencies listed in `go.mod`, `go.sum`
 
 Clash Royale, Supercell, related names, card artwork, and API-delivered assets are trademarks or copyrighted material of Supercell Oy and/or their respective owners. They are not covered by Royale Scout's MIT License.
 
+Unmodified Clash Royale clan badge images in `frontend/public/clan-badges` are sourced from the [RoyaleAPI asset repository](https://github.com/RoyaleAPI/cr-api-assets), with badge identifiers mapped using [RoyaleAPI static data](https://github.com/RoyaleAPI/cr-api-data). These game assets remain the property of their respective owners, are used only to identify Clash Royale clans, and are not covered by Royale Scout's MIT License.
+
 This material is unofficial and is not endorsed by Supercell. For more information see [Supercell's Fan Content Policy](https://supercell.com/en/fan-content-policy/).

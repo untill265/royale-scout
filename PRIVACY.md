@@ -1,6 +1,6 @@
 # Privacy
 
-Last updated: 21 August 2026
+Last updated: 22 August 2026
 
 Royale Scout is designed as a local-only desktop utility. It has no user accounts, hosted backend, advertising, analytics, telemetry, or search-history service.
 
@@ -9,7 +9,7 @@ Royale Scout is designed as a local-only desktop utility. It has no user account
 Royale Scout stores the following under `%LOCALAPPDATA%\RoyaleScout`:
 
 - the user's Clash Royale API token, encrypted with Windows Data Protection API (DPAPI) for the current Windows account;
-- a local SQLite snapshot of the public Ranked leaderboard;
+- a local SQLite snapshot of the public Ranked leaderboard, including the current top 250 players' public clan names and badge identifiers;
 - cached card images received from Supercell's official CDN.
 
 The interface language is stored in the embedded browser's local storage. Search text, medal counts, candidate selections, and viewed decks are not persisted as history.
@@ -20,10 +20,10 @@ All app data can be deleted through **Settings → Delete all local data**. This
 
 The desktop app contains a host allowlist and permits its own API/image requests only to:
 
-- `https://api.clashroyale.com` — token verification, public leaderboard data, cards, and the selected player's battle log;
+- `https://api.clashroyale.com` — token verification, public leaderboard data, cards, and public battle logs requested for the selected opponent or visible Top 250 players;
 - `https://api-assets.clashroyale.com` — card images referenced by the official API.
 
-The API token is included only in authenticated requests to `api.clashroyale.com`. Nickname fragments and medal counts are matched locally. After a user selects a player, that player's public tag is sent to the official API to request the battle log.
+The API token is included only in authenticated requests to `api.clashroyale.com`. Nickname fragments, medal counts, and Top 250 filters are matched locally. After a user selects an opponent, that player's public tag is sent to the official API to request the battle log. In Top 250, public tags are requested in small batches only for rows near the viewport; those deck results are held temporarily in memory and are not stored as history.
 
 When the user explicitly selects a link in the app, Windows opens the official developer portal or Fan Content Policy page in the default browser. Those browser visits are governed by the destination site's own privacy terms.
 

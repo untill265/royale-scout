@@ -2,6 +2,7 @@ package main
 
 import (
 	"embed"
+	"net/http"
 
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/options"
@@ -23,7 +24,8 @@ func main() {
 		MinWidth:  390,
 		MinHeight: 640,
 		AssetServer: &assetserver.Options{
-			Assets: assets,
+			Assets:  assets,
+			Handler: http.HandlerFunc(app.serveLocalAsset),
 		},
 		BackgroundColour: &options.RGBA{R: 12, G: 18, B: 28, A: 1},
 		OnStartup:        app.startup,

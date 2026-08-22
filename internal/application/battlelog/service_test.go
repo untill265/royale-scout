@@ -36,6 +36,32 @@ func TestLatestRankedDecksFiltersSortsAndDoesNotMergeDuplicates(t *testing.T) {
 	}
 }
 
+func TestLatestRankedDecksLimitAndAverageElixir(t *testing.T) {
+	cards := makeCards(8)
+	for index := range cards {
+		cards[index].ElixirCost = index%4 + 2
+	}
+	api := fakeAPI{battles: []clashapi.Battle{
+		{Type: rankedBattleType, BattleTime: "20260820T123000.000Z", Team: []clashapi.BattleParticipant{{Cards: cards}}},
+		{Type: rankedBattleType, BattleTime: "20260820T121500.000Z", Team: []clashapi.BattleParticipant{{Cards: cards}}},
+		{Type: rankedBattleType, BattleTime: "20260820T120000.000Z", Team: []clashapi.BattleParticipant{{Cards: cards}}},
+	}}
+
+	result, err := NewService(api, fakeImageCache{}).LatestRankedDecksLimit(context.Background(), "#PLAYER", 2)
+	if err != nil {
+		t.Fatalf("LatestRankedDecksLimit() error = %v", err)
+	}
+	if len(result.Matches) != 2 {
+		t.Fatalf("matches = %d, want 2", len(result.Matches))
+	}
+	if result.Matches[0].AverageElixir != 3.5 {
+		t.Fatalf("averageElixir = %.1f, want 3.5", result.Matches[0].AverageElixir)
+	}
+	if _, err := NewService(api, fakeImageCache{}).LatestRankedDecksLimit(context.Background(), "#PLAYER", 4); err == nil {
+		t.Fatal("LatestRankedDecksLimit(limit=4) error = nil")
+	}
+}
+
 func TestEvolutionImageIsPreferredWhenUsed(t *testing.T) {
 	api := fakeAPI{battles: []clashapi.Battle{{
 		Type:       rankedBattleType,
