@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"royalescout/internal/application/ports"
 	"royalescout/internal/domain/player"
 	"royalescout/internal/domain/topplayer"
 
@@ -283,6 +284,76 @@ func (store *Store) ReplaceSnapshot(ctx context.Context, players []player.Player
 
 	if err := transaction.Commit(); err != nil {
 		return fmt.Errorf("commit player snapshot: %w", err)
+	}
+	return nil
+}
+
+func (store *Store) ReplaceLocationSnapshots(ctx context.Context, snapshots []ports.LocationPlayerSnapshot, syncedAt time.Time) error {
+	if len(snapshots) == 0 {
+		return nil
+	}
+
+	transaction, err := store.database.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin location player snapshot transaction: %w", err)
+	}
+	defer func() { _ = transaction.Rollback() }()
+
+	seenLocations := make(map[int64]struct{}, len(snapshots))
+	for _, snapshot := range snapshots {
+		if _, duplicate := seenLocations[snapshot.LocationID]; duplicate {
+			return fmt.Errorf("duplicate player snapshot for location %d", snapshot.LocationID)
+		}
+		seenLocations[snapshot.LocationID] = struct{}{}
+		if _, err := transaction.ExecContext(ctx, `DELETE FROM players WHERE country_id = ?`, snapshot.LocationID); err != nil {
+			return fmt.Errorf("clear player snapshot for location %d: %w", snapshot.LocationID, err)
+		}
+	}
+
+	insert, err := transaction.PrepareContext(ctx, `
+		INSERT INTO players (
+			tag, nickname_original, nickname_normalized, ranked_rating,
+			country_id, country_code, synced_at_unix
+		) VALUES (?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(tag) DO UPDATE SET
+			nickname_original = excluded.nickname_original,
+			nickname_normalized = excluded.nickname_normalized,
+			ranked_rating = excluded.ranked_rating,
+			country_id = excluded.country_id,
+			country_code = excluded.country_code,
+			synced_at_unix = excluded.synced_at_unix
+	`)
+	if err != nil {
+		return fmt.Errorf("prepare location player insert: %w", err)
+	}
+
+	syncedAtUnix := syncedAt.UTC().Unix()
+	for _, snapshot := range snapshots {
+		for _, storedPlayer := range snapshot.Players {
+			if storedPlayer.CountryID != snapshot.LocationID {
+				_ = insert.Close()
+				return fmt.Errorf("player %q belongs to location %d, snapshot is %d", storedPlayer.Tag, storedPlayer.CountryID, snapshot.LocationID)
+			}
+			if _, err := insert.ExecContext(
+				ctx,
+				storedPlayer.Tag,
+				storedPlayer.NicknameOriginal,
+				storedPlayer.NicknameNormalized,
+				storedPlayer.RankedRating,
+				storedPlayer.CountryID,
+				storedPlayer.CountryCode,
+				syncedAtUnix,
+			); err != nil {
+				_ = insert.Close()
+				return fmt.Errorf("insert player %q for location %d: %w", storedPlayer.Tag, snapshot.LocationID, err)
+			}
+		}
+	}
+	if err := insert.Close(); err != nil {
+		return fmt.Errorf("close location player insert: %w", err)
+	}
+	if err := transaction.Commit(); err != nil {
+		return fmt.Errorf("commit location player snapshots: %w", err)
 	}
 	return nil
 }

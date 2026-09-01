@@ -11,8 +11,17 @@ import (
 type PlayerRepository interface {
 	SearchByRating(ctx context.Context, minimum, maximum int) ([]player.Player, error)
 	ReplaceSnapshot(ctx context.Context, players []player.Player, syncedAt time.Time) error
+	ReplaceLocationSnapshots(ctx context.Context, snapshots []LocationPlayerSnapshot, syncedAt time.Time) error
 	ClearActive(ctx context.Context) error
 	Count(ctx context.Context) (int, error)
+}
+
+// LocationPlayerSnapshot is one independently refreshable leaderboard. A
+// successful location replaces only its own former rows, so a temporary API
+// failure in another country cannot make the entire search index stale.
+type LocationPlayerSnapshot struct {
+	LocationID int64
+	Players    []player.Player
 }
 
 type MetadataRepository interface {

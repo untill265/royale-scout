@@ -26,8 +26,8 @@ import (
 )
 
 const (
-	applicationVersion       = "0.3.3"
-	leaderboardSyncInterval  = 5 * time.Minute
+	applicationVersion       = "0.3.4"
+	leaderboardSyncInterval  = time.Minute
 	tokenVerificationTimeout = 30 * time.Second
 	ignoreLegacyConfigEnv    = "ROYALE_SCOUT_IGNORE_LEGACY_CONFIG"
 )
@@ -359,7 +359,7 @@ func samePath(left, right string) bool {
 	return strings.EqualFold(filepath.Clean(left), filepath.Clean(right))
 }
 
-func (app *App) Search(input string, requireTargetScript bool) (opponentscout.SearchResult, error) {
+func (app *App) Search(input string, requireTargetScript bool, targetScriptCount, emojiFilter, arabicFilter int) (opponentscout.SearchResult, error) {
 	app.cancelTopDeckLoading()
 	app.operationMutex.RLock()
 	defer app.operationMutex.RUnlock()
@@ -372,6 +372,9 @@ func (app *App) Search(input string, requireTargetScript bool) (opponentscout.Se
 	return service.Search(app.ctx, opponentscout.SearchRequest{
 		Input:               input,
 		RequireTargetScript: requireTargetScript,
+		TargetScriptCount:   targetScriptCount,
+		EmojiFilter:         opponentscout.OptionalBooleanFilter(emojiFilter),
+		ArabicFilter:        opponentscout.OptionalBooleanFilter(arabicFilter),
 	})
 }
 

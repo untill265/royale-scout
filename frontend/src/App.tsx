@@ -15,6 +15,8 @@ type Locale = 'ru' | 'en';
 type Screen = 'search' | 'candidates' | 'decks';
 type Module = 'scout' | 'top';
 type AppState = 'setupRequired' | 'initializing' | 'ready' | 'waitingForSeason' | 'error';
+type ScriptCountFilter = 0 | 1 | 2 | 3 | 4 | 5;
+type OptionalBooleanFilter = 0 | 1 | 2;
 
 interface StatusResponse {
     state: AppState;
@@ -80,6 +82,12 @@ const translations = {
         scriptLabel: 'Есть иероглифы',
         scriptHint: 'Китайский, японский, корейский или арабский текст',
         scriptNote: 'Эмоции не считаются',
+        symbolCountFilter: 'Количество символов',
+        emojiFilter: 'Эмодзи',
+        arabicFilter: 'Арабский',
+        optionalFilter: 'необязательно',
+        filterYes: 'Да',
+        filterNo: 'Нет',
         helpButton: 'Как искать',
         helpTooltip: 'Открыть подсказку по поиску',
         helpEyebrow: 'Всё просто',
@@ -106,7 +114,7 @@ const translations = {
             },
             {
                 title: 'Как работает «Есть иероглифы»',
-                text: 'Это дополнительный фильтр. Без флажка поиск проверяет все ники — в том числе с китайскими, японскими, корейскими или арабскими символами. Включите его, чтобы оставить только такие ники. Эмоции не считаются.',
+                text: 'Без флажка поиск проверяет все ники. Включите его, чтобы оставить ники с китайским, японским, корейским или арабским текстом. Ниже появятся необязательные критерии: количество таких символов, эмодзи и арабский текст. Невыбранный критерий никак не ограничивает поиск.',
                 example: null,
             },
             {
@@ -228,6 +236,12 @@ const translations = {
         scriptLabel: 'Contains hieroglyphs',
         scriptHint: 'Chinese, Japanese, Korean, or Arabic text',
         scriptNote: 'Emoji do not count',
+        symbolCountFilter: 'Number of characters',
+        emojiFilter: 'Emoji',
+        arabicFilter: 'Arabic',
+        optionalFilter: 'optional',
+        filterYes: 'Yes',
+        filterNo: 'No',
         helpButton: 'How to search',
         helpTooltip: 'Open the search tips',
         helpEyebrow: 'It’s easy',
@@ -254,7 +268,7 @@ const translations = {
             },
             {
                 title: 'How “Contains hieroglyphs” works',
-                text: 'This is an extra filter. With it off, every nickname is searched—including ones with Chinese, Japanese, Korean, or Arabic characters. Turn it on to keep only those nicknames. Emoji do not count.',
+                text: 'With it off, every nickname is searched. Turn it on to keep nicknames with Chinese, Japanese, Korean, or Arabic text. Optional criteria then appear below: the number of those characters, emoji, and Arabic text. A criterion you leave unselected does not limit the search.',
                 example: null,
             },
             {
@@ -374,6 +388,9 @@ function App() {
     const [screen, setScreen] = useState<Screen>('search');
     const [input, setInput] = useState('');
     const [requireTargetScript, setRequireTargetScript] = useState(false);
+    const [targetScriptCount, setTargetScriptCount] = useState<ScriptCountFilter>(0);
+    const [emojiFilter, setEmojiFilter] = useState<OptionalBooleanFilter>(0);
+    const [arabicFilter, setArabicFilter] = useState<OptionalBooleanFilter>(0);
     const [candidates, setCandidates] = useState<Candidate[]>([]);
     const [selectedPlayer, setSelectedPlayer] = useState<Candidate | null>(null);
     const [decks, setDecks] = useState<DeckResponse | null>(null);
@@ -481,7 +498,7 @@ function App() {
         setBusy(true);
         setError(null);
         try {
-            const response = await searchPlayers(input, requireTargetScript) as SearchResponse;
+            const response = await searchPlayers(input, requireTargetScript, targetScriptCount, emojiFilter, arabicFilter) as SearchResponse;
             const found = response.candidates ?? [];
             if (found.length === 0) {
                 setError(t.notFound);
@@ -519,6 +536,9 @@ function App() {
     function resetSearch() {
         setInput('');
         setRequireTargetScript(false);
+        setTargetScriptCount(0);
+        setEmojiFilter(0);
+        setArabicFilter(0);
         setCandidates([]);
         setSelectedPlayer(null);
         setDecks(null);
@@ -726,11 +746,19 @@ function App() {
                                 )}
                             </div>
 
-                            <label className="script-filter">
+                            <label className={`script-filter ${requireTargetScript ? 'is-open' : ''}`}>
                                 <input
                                     type="checkbox"
                                     checked={requireTargetScript}
-                                    onChange={(event) => setRequireTargetScript(event.target.checked)}
+                                    onChange={(event) => {
+                                        const checked = event.target.checked;
+                                        setRequireTargetScript(checked);
+                                        if (!checked) {
+                                            setTargetScriptCount(0);
+                                            setEmojiFilter(0);
+                                            setArabicFilter(0);
+                                        }
+                                    }}
                                     disabled={busy}
                                 />
                                 <span className="custom-check"><CheckIcon/></span>
@@ -740,6 +768,67 @@ function App() {
                                     <small className="filter-note">{t.scriptNote}</small>
                                 </span>
                             </label>
+
+                            {requireTargetScript && (
+                                <div className="advanced-script-filters">
+                                    <div className="advanced-filter-row">
+                                        <div className="advanced-filter-label">
+                                            <strong>{t.symbolCountFilter}</strong>
+                                            <small>{t.optionalFilter}</small>
+                                        </div>
+                                        <div className="filter-chips" role="group" aria-label={t.symbolCountFilter}>
+                                            {([1, 2, 3, 4, 5] as ScriptCountFilter[]).map((value) => (
+                                                <button
+                                                    key={value}
+                                                    className={`filter-chip ${targetScriptCount === value ? 'is-selected' : ''}`}
+                                                    type="button"
+                                                    aria-pressed={targetScriptCount === value}
+                                                    disabled={busy}
+                                                    onClick={() => setTargetScriptCount((current) => current === value ? 0 : value)}
+                                                >{value === 5 ? '5+' : value}</button>
+                                            ))}
+                                        </div>
+                                    </div>
+
+                                    <div className="advanced-filter-row">
+                                        <div className="advanced-filter-label">
+                                            <strong>{t.emojiFilter}</strong>
+                                            <small>{t.optionalFilter}</small>
+                                        </div>
+                                        <div className="filter-chips binary" role="group" aria-label={t.emojiFilter}>
+                                            {([1, 2] as OptionalBooleanFilter[]).map((value) => (
+                                                <button
+                                                    key={value}
+                                                    className={`filter-chip text ${emojiFilter === value ? 'is-selected' : ''}`}
+                                                    type="button"
+                                                    aria-pressed={emojiFilter === value}
+                                                    disabled={busy}
+                                                    onClick={() => setEmojiFilter((current) => current === value ? 0 : value)}
+                                                >{value === 1 ? t.filterYes : t.filterNo}</button>
+                                            ))}
+                                        </div>
+                                    </div>
+
+                                    <div className="advanced-filter-row">
+                                        <div className="advanced-filter-label">
+                                            <strong>{t.arabicFilter}</strong>
+                                            <small>{t.optionalFilter}</small>
+                                        </div>
+                                        <div className="filter-chips binary" role="group" aria-label={t.arabicFilter}>
+                                            {([1, 2] as OptionalBooleanFilter[]).map((value) => (
+                                                <button
+                                                    key={value}
+                                                    className={`filter-chip text ${arabicFilter === value ? 'is-selected' : ''}`}
+                                                    type="button"
+                                                    aria-pressed={arabicFilter === value}
+                                                    disabled={busy}
+                                                    onClick={() => setArabicFilter((current) => current === value ? 0 : value)}
+                                                >{value === 1 ? t.filterYes : t.filterNo}</button>
+                                            ))}
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
 
                             {error && <div className="inline-error" role="alert"><AlertIcon/>{error}</div>}
 

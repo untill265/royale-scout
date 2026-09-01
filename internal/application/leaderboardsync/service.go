@@ -151,26 +151,28 @@ func (service *Service) SyncOnce(ctx context.Context) error {
 		}
 	}
 
-	globalComplete, err := service.syncGlobalTop(ctx)
+	existingPlayerCount, err := service.players.Count(ctx)
 	if err != nil {
-		return err
+		return fmt.Errorf("count existing players: %w", err)
 	}
-	if !globalComplete {
-		if err := service.players.ClearActive(ctx); err != nil {
-			return fmt.Errorf("clear players while global leaderboard is incomplete: %w", err)
-		}
-		if service.topPlayers != nil {
-			if err := service.topPlayers.ClearTop(ctx); err != nil {
-				return fmt.Errorf("clear top players while global leaderboard is incomplete: %w", err)
-			}
-		}
+	waitForNewSeasonLeaderboard := existingPlayerCount == 0
+
+	globalItems, globalComplete, globalError := service.syncGlobalTop(ctx)
+	if waitForNewSeasonLeaderboard && (globalError != nil || !globalComplete) {
 		service.markWaitingForSeason()
-		return nil
+		return globalError
+	}
+	cycleErrors := make([]error, 0)
+	if globalError != nil {
+		cycleErrors = append(cycleErrors, globalError)
+	} else if !globalComplete {
+		cycleErrors = append(cycleErrors, errors.New("global Path of Legend leaderboard is incomplete"))
 	}
 
 	locationsPage, _, err := service.api.Locations(ctx, 1000, "")
 	if err != nil {
-		return fmt.Errorf("load locations: %w", err)
+		cycleErrors = append(cycleErrors, fmt.Errorf("load locations: %w", err))
+		return errors.Join(cycleErrors...)
 	}
 	countries := make([]clashapi.Location, 0, len(locationsPage.Items))
 	for _, location := range locationsPage.Items {
@@ -178,28 +180,45 @@ func (service *Service) SyncOnce(ctx context.Context) error {
 			countries = append(countries, location)
 		}
 	}
+	if len(countries) == 0 {
+		cycleErrors = append(cycleErrors, errors.New("country location list is empty"))
+		return errors.Join(cycleErrors...)
+	}
 
-	snapshot, err := service.collectSnapshot(ctx, countries)
+	snapshots, countryErrors, err := service.collectLocationSnapshots(ctx, countries)
 	if err != nil {
-		return err
+		cycleErrors = append(cycleErrors, err)
+		return errors.Join(cycleErrors...)
+	}
+	cycleErrors = append(cycleErrors, countryErrors...)
+	if len(snapshots) == 0 {
+		cycleErrors = append(cycleErrors, errors.New("no country leaderboard was refreshed"))
+		return errors.Join(cycleErrors...)
+	}
+	if globalComplete {
+		snapshots = append([]ports.LocationPlayerSnapshot{service.globalSearchSnapshot(globalItems)}, snapshots...)
 	}
 	syncedAt := time.Now().UTC()
-	if err := service.players.ReplaceSnapshot(ctx, snapshot, syncedAt); err != nil {
+	if err := service.players.ReplaceLocationSnapshots(ctx, snapshots, syncedAt); err != nil {
 		return fmt.Errorf("publish leaderboard snapshot: %w", err)
+	}
+	playerCount, err := service.players.Count(ctx)
+	if err != nil {
+		return fmt.Errorf("count published players: %w", err)
 	}
 
 	service.updateStatus(func(status *Status) {
 		status.Ready = true
 		status.WaitingForSeason = false
-		status.PlayerCount = len(snapshot)
+		status.PlayerCount = playerCount
 	})
-	return nil
+	return errors.Join(cycleErrors...)
 }
 
 // RefreshTop fetches and publishes only the global top ranking. It intentionally
 // skips the much heavier country-by-country player sync used by opponent search.
 func (service *Service) RefreshTop(ctx context.Context) error {
-	complete, err := service.syncGlobalTop(ctx)
+	_, complete, err := service.syncGlobalTop(ctx)
 	if err != nil {
 		return err
 	}
@@ -209,21 +228,21 @@ func (service *Service) RefreshTop(ctx context.Context) error {
 	return nil
 }
 
-func (service *Service) syncGlobalTop(ctx context.Context) (bool, error) {
+func (service *Service) syncGlobalTop(ctx context.Context) ([]clashapi.LeaderboardPlayer, bool, error) {
 	service.topSyncMutex.Lock()
 	defer service.topSyncMutex.Unlock()
 
 	globalPage, _, err := service.api.PathOfLegendPlayers(ctx, "global", requiredGlobalTop, "")
 	if err != nil {
-		return false, fmt.Errorf("load global Path of Legend leaderboard: %w", err)
+		return nil, false, fmt.Errorf("load global Path of Legend leaderboard: %w", err)
 	}
 	if len(globalPage.Items) < requiredGlobalTop {
-		return false, nil
+		return nil, false, nil
 	}
 	if err := service.publishGlobalTop(ctx, globalPage.Items); err != nil {
-		return false, err
+		return nil, false, err
 	}
-	return true, nil
+	return globalPage.Items, true, nil
 }
 
 func (service *Service) publishGlobalTop(ctx context.Context, items []clashapi.LeaderboardPlayer) error {
@@ -256,8 +275,23 @@ func (service *Service) publishGlobalTop(ctx context.Context, items []clashapi.L
 	return nil
 }
 
-func (service *Service) collectSnapshot(ctx context.Context, countries []clashapi.Location) ([]player.Player, error) {
+func (service *Service) globalSearchSnapshot(items []clashapi.LeaderboardPlayer) ports.LocationPlayerSnapshot {
+	players := make([]player.Player, 0, len(items))
+	for _, apiPlayer := range items {
+		players = append(players, player.Player{
+			Tag:                apiPlayer.Tag,
+			NicknameOriginal:   apiPlayer.Name,
+			NicknameNormalized: service.normalizer.Normalize(apiPlayer.Name),
+			RankedRating:       apiPlayer.EloRating,
+			CountryID:          0,
+		})
+	}
+	return ports.LocationPlayerSnapshot{LocationID: 0, Players: players}
+}
+
+func (service *Service) collectLocationSnapshots(ctx context.Context, countries []clashapi.Location) ([]ports.LocationPlayerSnapshot, []error, error) {
 	type result struct {
+		country clashapi.Location
 		players []player.Player
 		err     error
 	}
@@ -271,7 +305,7 @@ func (service *Service) collectSnapshot(ctx context.Context, countries []clashap
 			defer workers.Done()
 			for country := range jobs {
 				players, err := service.loadCountry(ctx, country)
-				results <- result{players: players, err: err}
+				results <- result{country: country, players: players, err: err}
 			}
 		}()
 	}
@@ -291,32 +325,24 @@ func (service *Service) collectSnapshot(ctx context.Context, countries []clashap
 		close(results)
 	}()
 
-	byTag := make(map[string]player.Player)
-	var firstError error
+	snapshots := make([]ports.LocationPlayerSnapshot, 0, len(countries))
+	failures := make([]error, 0)
 	for loaded := range results {
 		if loaded.err != nil {
-			if firstError == nil {
-				firstError = loaded.err
-			}
+			failures = append(failures, loaded.err)
 			continue
 		}
-		for _, storedPlayer := range loaded.players {
-			byTag[storedPlayer.Tag] = storedPlayer
-		}
-	}
-	if firstError != nil {
-		return nil, firstError
+		snapshots = append(snapshots, ports.LocationPlayerSnapshot{
+			LocationID: loaded.country.ID,
+			Players:    loaded.players,
+		})
 	}
 	if err := ctx.Err(); err != nil {
-		return nil, err
+		return nil, failures, err
 	}
 
-	snapshot := make([]player.Player, 0, len(byTag))
-	for _, storedPlayer := range byTag {
-		snapshot = append(snapshot, storedPlayer)
-	}
-	sort.Slice(snapshot, func(left, right int) bool { return snapshot[left].Tag < snapshot[right].Tag })
-	return snapshot, nil
+	sort.Slice(snapshots, func(left, right int) bool { return snapshots[left].LocationID < snapshots[right].LocationID })
+	return snapshots, failures, nil
 }
 
 func (service *Service) loadCountry(ctx context.Context, country clashapi.Location) ([]player.Player, error) {

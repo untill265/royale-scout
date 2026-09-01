@@ -23,4 +23,4 @@ export function GetTopPlayers():Promise<topranking.Snapshot>;
 
 export function RefreshTopPlayers():Promise<topranking.Snapshot>;
 
-export function Search(arg1:string,arg2:boolean):Promise<opponentscout.SearchResult>;
+export function Search(arg1:string,arg2:boolean,arg3:number,arg4:number,arg5:number):Promise<opponentscout.SearchResult>;

@@ -527,6 +527,10 @@ main {
     cursor: pointer;
 }
 
+.script-filter.is-open {
+    margin-bottom: 11px;
+}
+
 .script-filter input {
     position: absolute;
     width: 1px;
@@ -593,6 +597,112 @@ main {
 .filter-copy .filter-note {
     color: #77869a;
     font-size: 10px;
+}
+
+.advanced-script-filters {
+    position: relative;
+    z-index: 1;
+    display: grid;
+    gap: 0;
+    margin: 0 0 22px 34px;
+    padding: 5px 14px;
+    border: 1px solid rgba(124, 227, 195, 0.14);
+    border-radius: 14px;
+    background: rgba(7, 12, 20, 0.38);
+    animation: filter-panel-in 170ms ease-out;
+}
+
+.advanced-filter-row {
+    display: flex;
+    min-height: 52px;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.055);
+}
+
+.advanced-filter-row:last-child {
+    border-bottom: 0;
+}
+
+.advanced-filter-label {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.advanced-filter-label strong {
+    color: var(--muted-strong);
+    font-size: 11px;
+    font-weight: 750;
+    line-height: 1.2;
+}
+
+.advanced-filter-label small {
+    color: #66768a;
+    font-size: 8px;
+    font-weight: 650;
+    letter-spacing: 0.035em;
+}
+
+.filter-chips {
+    display: flex;
+    flex: 0 0 auto;
+    gap: 5px;
+}
+
+.filter-chip {
+    min-width: 31px;
+    height: 29px;
+    padding: 0 7px;
+    border: 1px solid rgba(122, 141, 164, 0.22);
+    border-radius: 8px;
+    color: #91a0b4;
+    background: rgba(17, 27, 41, 0.8);
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 10px;
+    font-weight: 750;
+    transition: 140ms ease;
+}
+
+.filter-chip.text {
+    min-width: 45px;
+}
+
+.filter-chip:hover:not(:disabled) {
+    border-color: rgba(124, 227, 195, 0.34);
+    color: var(--text);
+    background: rgba(124, 227, 195, 0.08);
+}
+
+.filter-chip.is-selected {
+    border-color: rgba(124, 227, 195, 0.68);
+    color: var(--accent-ink);
+    background: var(--accent);
+    box-shadow: 0 6px 15px rgba(81, 205, 166, 0.16);
+}
+
+.filter-chip:focus-visible {
+    outline: 2px solid rgba(124, 227, 195, 0.5);
+    outline-offset: 2px;
+}
+
+.filter-chip:disabled {
+    cursor: not-allowed;
+    opacity: 0.55;
+}
+
+@keyframes filter-panel-in {
+    from {
+        opacity: 0;
+        transform: translateY(-5px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
 }
 
 .help-backdrop {
@@ -2905,6 +3015,24 @@ footer button svg {
     .search-card {
         padding: 26px 20px 22px;
         border-radius: 22px;
+    }
+
+    .advanced-script-filters {
+        margin-left: 0;
+        padding: 5px 11px;
+    }
+
+    .advanced-filter-row {
+        gap: 8px;
+    }
+
+    .advanced-filter-label strong {
+        font-size: 10px;
+    }
+
+    .filter-chip {
+        min-width: 29px;
+        padding: 0 6px;
     }
 
     .help-trigger > span:not(.help-trigger-tooltip) {

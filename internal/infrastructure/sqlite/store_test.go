@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"royalescout/internal/application/ports"
 	"royalescout/internal/domain/player"
 	"royalescout/internal/domain/topplayer"
 )
@@ -46,6 +47,54 @@ func TestReplaceSnapshotPublishesAtomicallyAndRemovesFormerPlayers(t *testing.T)
 	}
 	if len(players) != 1 || players[0].Tag != "#TWO" || players[0].NicknameOriginal != "Two updated" {
 		t.Fatalf("players = %#v", players)
+	}
+}
+
+func TestReplaceLocationSnapshotsRefreshesOnlySuccessfulLocations(t *testing.T) {
+	store, err := Open(filepath.Join(t.TempDir(), "royale-scout.db"))
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+	defer store.Close()
+
+	ctx := context.Background()
+	initial := []player.Player{
+		{Tag: "#OLD-AA", NicknameOriginal: "Old AA", NicknameNormalized: "oldaa", RankedRating: 2800, CountryID: 1, CountryCode: "AA"},
+		{Tag: "#OLD-BB", NicknameOriginal: "Old BB", NicknameNormalized: "oldbb", RankedRating: 2810, CountryID: 2, CountryCode: "BB"},
+	}
+	if err := store.ReplaceSnapshot(ctx, initial, time.Unix(100, 0)); err != nil {
+		t.Fatalf("ReplaceSnapshot() error = %v", err)
+	}
+
+	refreshedAt := time.Unix(200, 0).UTC()
+	err = store.ReplaceLocationSnapshots(ctx, []ports.LocationPlayerSnapshot{
+		{
+			LocationID: 1,
+			Players: []player.Player{
+				{Tag: "#FRESH-AA", NicknameOriginal: "Fresh AA", NicknameNormalized: "freshaa", RankedRating: 2900, CountryID: 1, CountryCode: "AA"},
+			},
+		},
+	}, refreshedAt)
+	if err != nil {
+		t.Fatalf("ReplaceLocationSnapshots() error = %v", err)
+	}
+
+	players, err := store.SearchByRating(ctx, 0, 99999)
+	if err != nil {
+		t.Fatalf("SearchByRating() error = %v", err)
+	}
+	byTag := make(map[string]player.Player, len(players))
+	for _, stored := range players {
+		byTag[stored.Tag] = stored
+	}
+	if _, found := byTag["#OLD-AA"]; found {
+		t.Fatalf("old successful-location row still exists: %#v", byTag["#OLD-AA"])
+	}
+	if !byTag["#FRESH-AA"].SyncedAt.Equal(refreshedAt) {
+		t.Fatalf("fresh location timestamp = %s", byTag["#FRESH-AA"].SyncedAt)
+	}
+	if byTag["#OLD-BB"].CountryID != 2 || !byTag["#OLD-BB"].SyncedAt.Equal(time.Unix(100, 0).UTC()) {
+		t.Fatalf("failed location was changed: %#v", byTag["#OLD-BB"])
 	}
 }
 

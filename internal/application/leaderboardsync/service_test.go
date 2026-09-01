@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"royalescout/internal/application/ports"
 	"royalescout/internal/domain/player"
 	"royalescout/internal/domain/topplayer"
 	"royalescout/internal/platform/clashapi"
@@ -32,7 +33,7 @@ func TestSyncOncePublishesCompleteCountrySnapshot(t *testing.T) {
 	if err := service.SyncOnce(context.Background()); err != nil {
 		t.Fatalf("SyncOnce() error = %v", err)
 	}
-	if len(repository.players) != 2 {
+	if len(repository.players) != requiredGlobalTop+2 {
 		t.Fatalf("players = %d", len(repository.players))
 	}
 	if repository.players["#ONE"].NicknameNormalized != "suslik" {
@@ -43,9 +44,10 @@ func TestSyncOncePublishesCompleteCountrySnapshot(t *testing.T) {
 	}
 }
 
-func TestSyncOnceKeepsOldSnapshotWhenCountryFails(t *testing.T) {
+func TestSyncOncePublishesSuccessfulCountriesAndKeepsFailedCountry(t *testing.T) {
 	repository := newMemoryStore()
-	repository.players["#OLD"] = player.Player{Tag: "#OLD"}
+	repository.players["#OLD-AA"] = player.Player{Tag: "#OLD-AA", CountryID: 1, CountryCode: "AA"}
+	repository.players["#OLD-BB"] = player.Player{Tag: "#OLD-BB", CountryID: 2, CountryCode: "BB"}
 	repository.metadata[seasonMetadataKey] = "2026-07"
 	api := &fakeAPI{
 		seasons: []clashapi.Season{{ID: "2026-07"}},
@@ -64,8 +66,57 @@ func TestSyncOnceKeepsOldSnapshotWhenCountryFails(t *testing.T) {
 	if err := service.SyncOnce(context.Background()); err == nil {
 		t.Fatal("SyncOnce() error = nil")
 	}
-	if len(repository.players) != 1 || repository.players["#OLD"].Tag != "#OLD" {
-		t.Fatalf("old snapshot was replaced: %#v", repository.players)
+	if _, found := repository.players["#OLD-AA"]; found {
+		t.Fatalf("old successful-country row was retained: %#v", repository.players["#OLD-AA"])
+	}
+	if repository.players["#ONE"].RankedRating != 2910 {
+		t.Fatalf("successful country was not refreshed: %#v", repository.players["#ONE"])
+	}
+	if repository.players["#OLD-BB"].CountryID != 2 {
+		t.Fatalf("failed country was not retained: %#v", repository.players["#OLD-BB"])
+	}
+}
+
+func TestSyncOnceRefreshesCountriesWhenGlobalTopTemporarilyFails(t *testing.T) {
+	repository := newMemoryStore()
+	repository.players["#OLD"] = player.Player{Tag: "#OLD", CountryID: 1, CountryCode: "AA"}
+	repository.metadata[seasonMetadataKey] = "2026-07"
+	api := &fakeAPI{
+		seasons:   []clashapi.Season{{ID: "2026-07"}},
+		locations: []clashapi.Location{{ID: 1, IsCountry: true, CountryCode: "AA"}},
+		globalErr: errors.New("temporary global failure"),
+		countries: map[string][]clashapi.LeaderboardPlayer{
+			"1": {{Tag: "#FRESH", Name: "Fresh", EloRating: 3000}},
+		},
+	}
+	service := New(api, repository, repository, 1, time.Minute)
+
+	if err := service.SyncOnce(context.Background()); err == nil {
+		t.Fatal("SyncOnce() error = nil")
+	}
+	if len(repository.players) != 1 || repository.players["#FRESH"].RankedRating != 3000 {
+		t.Fatalf("country refresh was blocked by global failure: %#v", repository.players)
+	}
+}
+
+func TestSyncOnceDoesNotBecomeReadyWhenEveryCountryFails(t *testing.T) {
+	repository := newMemoryStore()
+	api := &fakeAPI{
+		seasons:       []clashapi.Season{{ID: "2026-07"}},
+		locations:     []clashapi.Location{{ID: 1, IsCountry: true, CountryCode: "AA"}},
+		global:        makeLeaderboardPlayers(requiredGlobalTop, "global"),
+		countryErrors: map[string]error{"1": errors.New("temporary country failure")},
+	}
+	service := New(api, repository, repository, 1, time.Minute)
+
+	if err := service.SyncOnce(context.Background()); err == nil {
+		t.Fatal("SyncOnce() error = nil")
+	}
+	if len(repository.players) != 0 {
+		t.Fatalf("players = %#v, want empty", repository.players)
+	}
+	if service.Status().Ready {
+		t.Fatalf("status = %#v", service.Status())
 	}
 }
 
@@ -126,6 +177,7 @@ type fakeAPI struct {
 	seasons       []clashapi.Season
 	locations     []clashapi.Location
 	global        []clashapi.LeaderboardPlayer
+	globalErr     error
 	countries     map[string][]clashapi.LeaderboardPlayer
 	countryErrors map[string]error
 }
@@ -140,6 +192,9 @@ func (api *fakeAPI) Seasons(context.Context, int, string) (clashapi.Page[clashap
 
 func (api *fakeAPI) PathOfLegendPlayers(_ context.Context, locationID string, _ int, _ string) (clashapi.Page[clashapi.LeaderboardPlayer], clashapi.ResponseMeta, error) {
 	if locationID == "global" {
+		if api.globalErr != nil {
+			return clashapi.Page[clashapi.LeaderboardPlayer]{}, clashapi.ResponseMeta{StatusCode: 503}, api.globalErr
+		}
 		return clashapi.Page[clashapi.LeaderboardPlayer]{Items: api.global}, clashapi.ResponseMeta{StatusCode: 200}, nil
 	}
 	if err := api.countryErrors[locationID]; err != nil {
@@ -189,6 +244,25 @@ func (store *memoryStore) ReplaceSnapshot(_ context.Context, players []player.Pl
 	store.players = make(map[string]player.Player, len(players))
 	for _, stored := range players {
 		store.players[stored.Tag] = stored
+	}
+	return nil
+}
+
+func (store *memoryStore) ReplaceLocationSnapshots(_ context.Context, snapshots []ports.LocationPlayerSnapshot, syncedAt time.Time) error {
+	locations := make(map[int64]struct{}, len(snapshots))
+	for _, snapshot := range snapshots {
+		locations[snapshot.LocationID] = struct{}{}
+	}
+	for tag, stored := range store.players {
+		if _, replace := locations[stored.CountryID]; replace {
+			delete(store.players, tag)
+		}
+	}
+	for _, snapshot := range snapshots {
+		for _, stored := range snapshot.Players {
+			stored.SyncedAt = syncedAt
+			store.players[stored.Tag] = stored
+		}
 	}
 	return nil
 }

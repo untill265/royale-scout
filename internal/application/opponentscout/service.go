@@ -11,7 +11,18 @@ import (
 type SearchRequest struct {
 	Input               string
 	RequireTargetScript bool
+	TargetScriptCount   int
+	EmojiFilter         OptionalBooleanFilter
+	ArabicFilter        OptionalBooleanFilter
 }
+
+type OptionalBooleanFilter int
+
+const (
+	OptionalBooleanAny OptionalBooleanFilter = iota
+	OptionalBooleanYes
+	OptionalBooleanNo
+)
 
 type Candidate struct {
 	PlayerTag        string `json:"playerTag"`
@@ -57,8 +68,14 @@ func (service SearchService) Search(ctx context.Context, request SearchRequest) 
 		if normalizedFragment != "" && !strings.Contains(storedPlayer.NicknameNormalized, normalizedFragment) {
 			continue
 		}
-		if request.RequireTargetScript && !service.scriptDetector.ContainsTargetScript(storedPlayer.NicknameOriginal) {
-			continue
+		if request.RequireTargetScript {
+			features := service.scriptDetector.Analyze(storedPlayer.NicknameOriginal)
+			if !features.ContainsTargetScript ||
+				!matchesTargetScriptCount(features.TargetScriptCount, request.TargetScriptCount) ||
+				!request.EmojiFilter.matches(features.ContainsEmoji) ||
+				!request.ArabicFilter.matches(features.ContainsArabic) {
+				continue
+			}
 		}
 		candidates = append(candidates, Candidate{
 			PlayerTag:        storedPlayer.Tag,
@@ -78,6 +95,32 @@ func (service SearchService) Search(ctx context.Context, request SearchRequest) 
 	})
 
 	return SearchResult{Candidates: candidates}, nil
+}
+
+func matchesTargetScriptCount(actual, selected int) bool {
+	switch selected {
+	case 0:
+		return true
+	case 1, 2, 3, 4:
+		return actual == selected
+	case 5:
+		return actual >= selected
+	default:
+		return false
+	}
+}
+
+func (filter OptionalBooleanFilter) matches(actual bool) bool {
+	switch filter {
+	case OptionalBooleanAny:
+		return true
+	case OptionalBooleanYes:
+		return actual
+	case OptionalBooleanNo:
+		return !actual
+	default:
+		return false
+	}
 }
 
 func absolute(value int) int {

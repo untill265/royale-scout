@@ -3,6 +3,7 @@ module royalescout
 go 1.27.0
 
 require (
+	github.com/rivo/uniseg v0.4.7
 	github.com/wailsapp/wails/v2 v2.15.0
 	golang.org/x/sys v0.47.0
 	golang.org/x/text v0.41.0
@@ -30,7 +31,6 @@ require (
 	github.com/pkg/browser v0.0.0-20240102092130-5ac0b6a4141c // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
-	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/samber/lo v1.49.1 // indirect
 	github.com/tkrajina/go-reflector v0.5.8 // indirect
 	github.com/valyala/bytebufferpool v1.0.0 // indirect
