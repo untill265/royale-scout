@@ -5,7 +5,7 @@ go 1.27.0
 require (
 	github.com/rivo/uniseg v0.4.7
 	github.com/wailsapp/wails/v2 v2.15.0
-	golang.org/x/sys v0.47.0
+	golang.org/x/sys v0.48.0
 	golang.org/x/text v0.41.0
 	modernc.org/sqlite v1.57.0
 )
